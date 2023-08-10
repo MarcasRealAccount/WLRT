@@ -33,8 +33,18 @@ int main(int argc, char** argv)
 		.width  = 1280,
 		.height = 720
 	};
+	VkSwapchainData vkSwapchain;
+	memset(&vkSwapchain, 0, sizeof(vkSwapchain));
+	vkSwapchain.window = &window;
 	if (!WLRTCreateWindow(&window))
 	{
+		VkCleanup(&vk);
+		glfwTerminate();
+		return 1;
+	}
+	if (!VkSetupSwapchain(&vk, &vkSwapchain))
+	{
+		WLRTDestroyWindow(&window);
 		VkCleanup(&vk);
 		glfwTerminate();
 		return 1;
@@ -47,6 +57,7 @@ int main(int argc, char** argv)
 		WLRTWindowPollEvents();
 	}
 
+	VkCleanupSwapchain(&vk, &vkSwapchain);
 	WLRTDestroyWindow(&window);
 
 	VkCleanup(&vk);

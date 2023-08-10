@@ -31,6 +31,25 @@ typedef struct VkData
 	VkErrorCallbackFn errorCallback;
 } VkData;
 
+typedef struct VkSwapchainData
+{
+	struct WindowData* window;
+
+	VkSurfaceKHR       surface;
+	VkSwapchainKHR     swapchain;
+	VkSurfaceFormatKHR format;
+	VkPresentModeKHR   presentMode;
+	VkExtent2D         extent;
+	bool               invalid;
+
+	uint32_t     imageIndex;
+	uint32_t     imageCount;
+	VkImage*     images;
+	VkImageView* views;
+	VkSemaphore* imageAvailable;
+	VkSemaphore* renderFinished;
+} VkSwapchainData;
+
 const char* VkGetErrorString(int code);
 const char* VkGetResultString(VkResult result);
 
@@ -40,3 +59,6 @@ bool VkValidateAllowed(VkData* vk, VkResult result, VkResult* allowed, uint32_t 
 
 bool VkSetup(VkData* vk);
 void VkCleanup(VkData* vk);
+
+bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain);
+void VkCleanupSwapchain(VkData* vk, VkSwapchainData* swapchain);

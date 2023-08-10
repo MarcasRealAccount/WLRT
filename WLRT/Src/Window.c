@@ -23,17 +23,17 @@ static void GLFWWinCloseCB(GLFWwindow* window)
 	wd->wantsClose = true;
 }
 
-int WLRTCreateWindow(WindowData* wd)
+bool WLRTCreateWindow(WindowData* wd)
 {
 	if (wd->handle != NULL)
-		return 0;
+		return false;
 
 	glfwDefaultWindowHints();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 	wd->handle = glfwCreateWindow(wd->width, wd->height, "WLRT", NULL, NULL);
 	if (!wd->handle)
-		return 0;
+		return false;
 	glfwSetWindowUserPointer(wd->handle, wd);
 	glfwSetWindowPosCallback(wd->handle, &GLFWWinPosCB);
 	glfwSetWindowSizeCallback(wd->handle, &GLFWWinSizeCB);
@@ -49,7 +49,7 @@ int WLRTCreateWindow(WindowData* wd)
 	glfwSetWindowPos(wd->handle, wx, wy);
 	glfwMaximizeWindow(wd->handle);
 
-	return 1;
+	return true;
 }
 
 void WLRTDestroyWindow(WindowData* wd)
@@ -58,17 +58,15 @@ void WLRTDestroyWindow(WindowData* wd)
 		glfwDestroyWindow(wd->handle);
 }
 
-int WLRTMakeWindowVisible(WindowData* wd)
+void WLRTMakeWindowVisible(WindowData* wd)
 {
 	if (!wd->handle)
-		return 0;
+		return;
 
 	glfwShowWindow(wd->handle);
-	return 1;
 }
 
-int WLRTWindowPollEvents()
+void WLRTWindowPollEvents()
 {
 	glfwPollEvents();
-	return 1;
 }

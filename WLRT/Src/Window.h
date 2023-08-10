@@ -15,7 +15,7 @@ typedef struct WindowData
 	bool wantsClose;
 } WindowData;
 
-int  WLRTCreateWindow(WindowData* wd);
+bool WLRTCreateWindow(WindowData* wd);
 void WLRTDestroyWindow(WindowData* wd);
-int  WLRTMakeWindowVisible(WindowData* wd);
-int  WLRTWindowPollEvents();
+void WLRTMakeWindowVisible(WindowData* wd);
+void WLRTWindowPollEvents();

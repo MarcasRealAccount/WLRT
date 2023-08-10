@@ -5,7 +5,7 @@
 
 #include <stdio.h>
 
-void GLFWErrCB(int code, const char* msg)
+static void GLFWErrCB(int code, const char* msg)
 {
 	printf("GLFW ERROR (%d): %s\n", code, msg);
 }

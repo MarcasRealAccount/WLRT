@@ -3,21 +3,21 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-void GLFWWinPosCB(GLFWwindow* window, int x, int y)
+static void GLFWWinPosCB(GLFWwindow* window, int x, int y)
 {
 	WindowData* wd = (WindowData*) glfwGetWindowUserPointer(window);
 	wd->x          = x;
 	wd->y          = y;
 }
 
-void GLFWWinSizeCB(GLFWwindow* window, int width, int height)
+static void GLFWWinSizeCB(GLFWwindow* window, int width, int height)
 {
 	WindowData* wd = (WindowData*) glfwGetWindowUserPointer(window);
 	wd->width      = width;
 	wd->height     = height;
 }
 
-void GLFWWinCloseCB(GLFWwindow* window)
+static void GLFWWinCloseCB(GLFWwindow* window)
 {
 	WindowData* wd = (WindowData*) glfwGetWindowUserPointer(window);
 	wd->wantsClose = true;

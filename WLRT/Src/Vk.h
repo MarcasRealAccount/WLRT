@@ -14,6 +14,15 @@ typedef enum VkErrorCode
 	VK_ERROR_CODE_NO_PHYSICAL_DEVICES = -3
 };
 
+typedef struct VkFrameData
+{
+	VkCommandPool   pool;
+	VkCommandBuffer buffer;
+
+	VkSemaphore semaphore;
+	uint64_t    value;
+} VkFrameData;
+
 typedef struct VkData
 {
 	VkAllocationCallbacks* allocation;
@@ -26,6 +35,12 @@ typedef struct VkData
 
 	VkPhysicalDeviceAccelerationStructurePropertiesKHR deviceAccStructureProps;
 	VkPhysicalDeviceProperties2                        deviceProps;
+
+	uint32_t     currentFrame;
+	uint32_t     framesInFlight;
+	uint32_t     framesCapacity;
+	VkFrameData* frames;
+	bool         inFrame;
 
 	VkResult          lastResult;
 	VkErrorCallbackFn errorCallback;
@@ -57,8 +72,19 @@ void VkReportError(VkData* vk, int code, const char* msg);
 bool VkValidate(VkData* vk, VkResult result);
 bool VkValidateAllowed(VkData* vk, VkResult result, VkResult* allowed, uint32_t allowedCount);
 
+VkFrameData* VkGetFrame(VkData* vk, uint32_t frame);
+VkFrameData* VkGetCurrentFrame(VkData* vk);
+
+bool VkBeginCmdBuffer(VkData* vk, VkCommandBuffer* buffer);
+bool VkEndCmdBuffer(VkData* vk);
+
+bool VkBeginFrame(VkData* vk, VkSwapchainData* swapchains, uint32_t swapchainCount);
+bool VkEndFrame(VkData* vk, VkSwapchainData* swapchains, uint32_t swapchainCount);
+
 bool VkSetup(VkData* vk);
 void VkCleanup(VkData* vk);
+bool VkSetupFrames(VkData* vk);
+void VkCleanupFrames(VkData* vk);
 
 bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain);
 void VkCleanupSwapchain(VkData* vk, VkSwapchainData* swapchain);

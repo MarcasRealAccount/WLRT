@@ -259,7 +259,8 @@ bool VkSetup(VkData* vk)
 	if (!VkSetupInstance(vk) ||
 		!VkSelectPhysicalDevice(vk) ||
 		!VkSetupDevice(vk) ||
-		!VkSetupVMA(vk))
+		!VkSetupVMA(vk) ||
+		!VkSetupFrames(vk))
 	{
 		VkCleanup(vk);
 		return false;
@@ -270,6 +271,7 @@ bool VkSetup(VkData* vk)
 
 void VkCleanup(VkData* vk)
 {
+	VkCleanupFrames(vk);
 	vmaDestroyAllocator(vk->allocator);
 	vkDestroyDevice(vk->device, vk->allocation);
 	vkDestroyInstance(vk->instance, vk->allocation);
@@ -278,4 +280,110 @@ void VkCleanup(VkData* vk)
 	vk->device         = NULL;
 	vk->physicalDevice = NULL;
 	vk->instance       = NULL;
+}
+
+bool VkSetupFrames(VkData* vk)
+{
+	if (vk->framesInFlight == vk->framesCapacity)
+		return true;
+
+	VkCleanupFrames(vk);
+
+	vk->frames = (VkFrameData*) malloc(vk->framesInFlight * sizeof(VkFrameData));
+	if (!vk->frames)
+	{
+		VkReportError(vk, VK_ERROR_CODE_ALLOCATION_FAILURE, "Failed to allocate frame data");
+		return false;
+	}
+	vk->framesCapacity = vk->framesInFlight;
+	for (uint32_t i = 0; i < vk->framesCapacity; ++i)
+	{
+		VkFrameData* frame = vk->frames + i;
+
+		VkCommandPoolCreateInfo pCreateInfo = {
+			.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			.pNext            = NULL,
+			.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+			.queueFamilyIndex = 0
+		};
+		if (!VkValidate(vk, vkCreateCommandPool(vk->device, &pCreateInfo, vk->allocation, &frame->pool)))
+		{
+			VkCleanupFrames(vk);
+			return false;
+		}
+		VkCommandBufferAllocateInfo allocInfo = {
+			.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.pNext              = NULL,
+			.commandPool        = frame->pool,
+			.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = 1
+		};
+		if (!VkValidate(vk, vkAllocateCommandBuffers(vk->device, &allocInfo, &frame->buffer)))
+		{
+			VkCleanupFrames(vk);
+			return false;
+		}
+
+		VkSemaphoreTypeCreateInfo stCreateInfo = {
+			.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+			.pNext         = NULL,
+			.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+			.initialValue  = 0
+		};
+		VkSemaphoreCreateInfo sCreateInfo = {
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+			.pNext = &stCreateInfo,
+			.flags = 0
+		};
+		if (!VkValidate(vk, vkCreateSemaphore(vk->device, &sCreateInfo, vk->allocation, &frame->semaphore)))
+		{
+			VkCleanupFrames(vk);
+			return false;
+		}
+		frame->value = 0;
+	}
+	return true;
+}
+
+void VkCleanupFrames(VkData* vk)
+{
+	if (vk->frames)
+	{
+		do {
+			VkSemaphore* semaphores = (VkSemaphore*) malloc(vk->framesCapacity * sizeof(VkSemaphore));
+			uint64_t*    values     = (uint64_t*) malloc(vk->framesCapacity * sizeof(uint64_t));
+			if (!semaphores || !values)
+			{
+				free(semaphores);
+				free(values);
+				break;
+			}
+			VkSemaphoreWaitInfo waitInfo = {
+				.sType          = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+				.pNext          = NULL,
+				.flags          = 0,
+				.semaphoreCount = vk->framesCapacity,
+				.pSemaphores    = semaphores,
+				.pValues        = values
+			};
+			for (uint32_t i = 0; i < vk->framesCapacity; ++i)
+			{
+				VkFrameData* frame = vk->frames + i;
+				semaphores[i]      = frame->semaphore;
+				values[i]          = frame->value;
+			}
+			VkValidate(vk, vkWaitSemaphores(vk->device, &waitInfo, ~0ULL));
+		}
+		while (false);
+
+		for (uint32_t i = 0; i < vk->framesCapacity; ++i)
+		{
+			VkFrameData* frame = vk->frames + i;
+			vkDestroyCommandPool(vk->device, frame->pool, vk->allocation);
+			vkDestroySemaphore(vk->device, frame->semaphore, vk->allocation);
+		}
+	}
+	free(vk->frames);
+	vk->frames         = NULL;
+	vk->framesCapacity = 0;
 }

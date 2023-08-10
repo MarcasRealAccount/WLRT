@@ -1,6 +1,7 @@
 #include "Window.h"
 #include "Vk.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 
 #define GLFW_INCLUDE_NONE
@@ -129,7 +130,7 @@ static VkPresentModeKHR VkSelectPresentMode(VkData* vk, VkSwapchainData* swapcha
 		VkPresentModeKHR presentMode = presentModes[i];
 		if (presentMode == VK_PRESENT_MODE_MAILBOX_KHR)
 		{
-			swapchain->presentMode = presentMode;
+			selectedMode = presentMode;
 			break;
 		}
 	}
@@ -152,17 +153,11 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 		for (uint32_t i = 0; i < swapchain->imageCount; ++i)
 		{
 			if (swapchain->views) vkDestroyImageView(vk->device, swapchain->views[i], vk->allocation);
-			if (swapchain->imageAvailable) vkDestroySemaphore(vk->device, swapchain->imageAvailable[i], vk->allocation);
-			if (swapchain->renderFinished) vkDestroySemaphore(vk->device, swapchain->renderFinished[i], vk->allocation);
 		}
 		free(swapchain->images);
 		free(swapchain->views);
-		free(swapchain->imageAvailable);
-		free(swapchain->renderFinished);
-		swapchain->images         = NULL;
-		swapchain->views          = NULL;
-		swapchain->imageAvailable = NULL;
-		swapchain->renderFinished = NULL;
+		swapchain->images = NULL;
+		swapchain->views  = NULL;
 	}
 
 	VkSwapchainKHR oldSwapchain = swapchain->swapchain;
@@ -173,7 +168,22 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 		VkCleanupSwapchain(vk, swapchain);
 		return false;
 	}
-	swapchain->imageCount  = min(caps.minImageCount + 1, caps.maxImageCount);
+	uint32_t imageCount       = min(caps.minImageCount + 1, caps.maxImageCount);
+	bool     imageCountDiffer = imageCount != swapchain->imageCount;
+	if (imageCountDiffer)
+	{
+		vkDeviceWaitIdle(vk->device);
+		for (uint32_t i = 0; i < swapchain->imageCount; ++i)
+		{
+			if (swapchain->imageAvailable) vkDestroySemaphore(vk->device, swapchain->imageAvailable[i], vk->allocation);
+			if (swapchain->renderFinished) vkDestroySemaphore(vk->device, swapchain->renderFinished[i], vk->allocation);
+		}
+		free(swapchain->imageAvailable);
+		free(swapchain->renderFinished);
+		swapchain->imageAvailable = NULL;
+		swapchain->renderFinished = NULL;
+	}
+	swapchain->imageCount  = imageCount;
 	swapchain->format      = VkSelectSurfaceFormat(vk, swapchain);
 	swapchain->presentMode = VkSelectPresentMode(vk, swapchain);
 	swapchain->extent      = caps.currentExtent;
@@ -209,11 +219,9 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 		VkCleanupSwapchain(vk, swapchain);
 		return false;
 	}
-	swapchain->images         = (VkImage*) malloc(swapchain->imageCount * sizeof(VkImage));
-	swapchain->views          = (VkImageView*) malloc(swapchain->imageCount * sizeof(VkImageView));
-	swapchain->imageAvailable = (VkSemaphore*) malloc(swapchain->imageCount * sizeof(VkSemaphore));
-	swapchain->renderFinished = (VkSemaphore*) malloc(swapchain->imageCount * sizeof(VkSemaphore));
-	if (!swapchain->images || !swapchain->views || !swapchain->imageAvailable || !swapchain->renderFinished)
+	swapchain->images = (VkImage*) malloc(swapchain->imageCount * sizeof(VkImage));
+	swapchain->views  = (VkImageView*) malloc(swapchain->imageCount * sizeof(VkImageView));
+	if (!swapchain->images || !swapchain->views)
 	{
 		VkCleanupSwapchain(vk, swapchain);
 		VkReportError(vk, VK_ERROR_CODE_ALLOCATION_FAILURE, "Failed to allocate swapchain buffers");
@@ -241,19 +249,27 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 			VkCleanupSwapchain(vk, swapchain);
 			return false;
 		}
-
-		VkSemaphoreCreateInfo sCreateInfo = {
-			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-			.pNext = NULL,
-			.flags = 0
-		};
-		if (!VkValidate(vk, vkCreateSemaphore(vk->device, &sCreateInfo, vk->allocation, swapchain->imageAvailable + i)) ||
-			!VkValidate(vk, vkCreateSemaphore(vk->device, &sCreateInfo, vk->allocation, swapchain->renderFinished + i)))
+	}
+	if (imageCountDiffer)
+	{
+		swapchain->imageAvailable = (VkSemaphore*) malloc(swapchain->imageCount * sizeof(VkSemaphore));
+		swapchain->renderFinished = (VkSemaphore*) malloc(swapchain->imageCount * sizeof(VkSemaphore));
+		for (uint32_t i = 0; i < swapchain->imageCount; ++i)
 		{
-			VkCleanupSwapchain(vk, swapchain);
-			return false;
+			VkSemaphoreCreateInfo sCreateInfo = {
+				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+				.pNext = NULL,
+				.flags = 0
+			};
+			if (!VkValidate(vk, vkCreateSemaphore(vk->device, &sCreateInfo, vk->allocation, swapchain->imageAvailable + i)) ||
+				!VkValidate(vk, vkCreateSemaphore(vk->device, &sCreateInfo, vk->allocation, swapchain->renderFinished + i)))
+			{
+				VkCleanupSwapchain(vk, swapchain);
+				return false;
+			}
 		}
 	}
+	swapchain->invalid = false;
 	return true;
 }
 

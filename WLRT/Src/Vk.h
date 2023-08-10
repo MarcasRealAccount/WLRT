@@ -11,7 +11,8 @@ typedef enum VkErrorCode
 {
 	VK_ERROR_CODE_CALL_FAILURE        = -1,
 	VK_ERROR_CODE_ALLOCATION_FAILURE  = -2,
-	VK_ERROR_CODE_NO_PHYSICAL_DEVICES = -3
+	VK_ERROR_CODE_NO_PHYSICAL_DEVICES = -3,
+	VK_ERROR_CODE_INVALID_FRAME       = -4
 };
 
 typedef struct VkFrameData
@@ -21,6 +22,16 @@ typedef struct VkFrameData
 
 	VkSemaphore semaphore;
 	uint64_t    value;
+
+	uint32_t                 swapchainCount;
+	struct VkSwapchainData** swapchainDatas;
+	VkSwapchainKHR*          swapchains;
+	uint32_t*                imageIndices;
+	VkImageMemoryBarrier2*   imageBarriers;
+	VkSemaphoreSubmitInfo*   imageWaits;
+	VkSemaphoreSubmitInfo*   renderSigs;
+	VkSemaphore*             renderWaits;
+	VkResult*                results;
 } VkFrameData;
 
 typedef struct VkData
@@ -78,8 +89,8 @@ VkFrameData* VkGetCurrentFrame(VkData* vk);
 bool VkBeginCmdBuffer(VkData* vk, VkCommandBuffer* buffer);
 bool VkEndCmdBuffer(VkData* vk);
 
-bool VkBeginFrame(VkData* vk, VkSwapchainData* swapchains, uint32_t swapchainCount);
-bool VkEndFrame(VkData* vk, VkSwapchainData* swapchains, uint32_t swapchainCount);
+bool VkBeginFrame(VkData* vk, VkSwapchainData** swapchains, uint32_t swapchainCount);
+bool VkEndFrame(VkData* vk);
 
 bool VkSetup(VkData* vk);
 void VkCleanup(VkData* vk);

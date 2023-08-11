@@ -43,7 +43,9 @@ typedef struct VkData
 	VkDevice         device;
 	VkQueue          queue;
 	VmaAllocator     allocator;
+	VkPipelineCache  pipelineCache;
 
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR    deviceRayTracingPipelineProps;
 	VkPhysicalDeviceAccelerationStructurePropertiesKHR deviceAccStructureProps;
 	VkPhysicalDeviceProperties2                        deviceProps;
 
@@ -107,6 +109,11 @@ typedef struct VkAccStruct
 	VmaAllocation              allocation;
 } VkAccStruct;
 
+typedef struct VkRayTracingPipelineData
+{
+	VkPipeline handle;
+} VkRayTracingPipelineData;
+
 const char* VkGetErrorString(int code);
 const char* VkGetResultString(VkResult result);
 
@@ -142,3 +149,6 @@ bool VkAccStructBuilderSetTriangles(VkData* vk, VkAccStructBuilder* builder, uin
 bool VkAccStructBuilderPrepare(VkData* vk, VkAccStructBuilder* builder, VkAccelerationStructureTypeKHR type, VkBuildAccelerationStructureFlagsKHR flags, uint32_t geometryCount, uint32_t firstGeometry);
 bool VkAccStructBuilderBuild(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* accStruct);
 bool VkAccStructBuilderCompact(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* accStruct, VkAccStruct* compactAccStruct);
+
+bool VkSetupRayTracingPipeline(VkData* vk, VkRayTracingPipelineData* rtPipeline);
+void VkCleanupRayTracingPipeline(VkData* vk, VkRayTracingPipelineData* rtPipeline);

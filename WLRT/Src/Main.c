@@ -267,6 +267,19 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	VkRayTracingPipelineData rtPipeline;
+	memset(&rtPipeline, 0, sizeof(rtPipeline));
+	if (!VkSetupRayTracingPipeline(&vk, &rtPipeline))
+	{
+		VkCleanupAccStruct(&vk, &tlas);
+		VkCleanupAccStruct(&vk, &blas);
+		VkCleanupSwapchain(&vk, &vkSwapchain);
+		WLRTDestroyWindow(&window);
+		VkCleanup(&vk);
+		glfwTerminate();
+		return 1;
+	}
+
 	WLRTMakeWindowVisible(&window);
 
 	double lastFrameTime = glfwGetTime();
@@ -328,8 +341,10 @@ int main(int argc, char** argv)
 
 	vkDeviceWaitIdle(vk.device);
 
-	VkCleanupAccStruct(&vk, &blas);
+	VkCleanupRayTracingPipeline(&vk, &rtPipeline);
+
 	VkCleanupAccStruct(&vk, &tlas);
+	VkCleanupAccStruct(&vk, &blas);
 
 	VkCleanupSwapchain(&vk, &vkSwapchain);
 	WLRTDestroyWindow(&window);

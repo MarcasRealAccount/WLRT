@@ -555,10 +555,12 @@ static bool VkSelectPhysicalDevice(VkData* vk)
 		vk->physicalDevice = devices[0];
 	free(devices);
 
-	vk->deviceAccStructureProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
-	vk->deviceAccStructureProps.pNext = NULL;
-	vk->deviceProps.sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-	vk->deviceProps.pNext             = &vk->deviceAccStructureProps;
+	vk->deviceRayTracingPipelineProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+	vk->deviceRayTracingPipelineProps.pNext = NULL;
+	vk->deviceAccStructureProps.sType       = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+	vk->deviceAccStructureProps.pNext       = &vk->deviceRayTracingPipelineProps;
+	vk->deviceProps.sType                   = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	vk->deviceProps.pNext                   = &vk->deviceAccStructureProps;
 	vkGetPhysicalDeviceProperties2(vk->physicalDevice, &vk->deviceProps);
 	return true;
 }
@@ -568,12 +570,18 @@ static bool VkSetupDevice(VkData* vk)
 	const char* exts[] = {
 		"VK_KHR_swapchain",
 		"VK_KHR_deferred_host_operations",
-		"VK_KHR_acceleration_structure"
+		"VK_KHR_acceleration_structure",
+		"VK_KHR_ray_tracing_pipeline"
 	};
 
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtpFeatures = {
+		.sType              = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
+		.pNext              = NULL,
+		.rayTracingPipeline = VK_TRUE
+	};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR accFeatures = {
 		.sType                 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
-		.pNext                 = NULL,
+		.pNext                 = &rtpFeatures,
 		.accelerationStructure = VK_TRUE
 	};
 	VkPhysicalDeviceVulkan13Features features13 = {
@@ -641,6 +649,44 @@ static bool VkSetupVMA(VkData* vk)
 	return true;
 }
 
+static bool VkSetupPipelineCache(VkData* vk)
+{
+	size_t   dataSize = 0;
+	uint8_t* data     = NULL;
+
+	FILE* cacheFile = fopen("pipelines.cache", "rb");
+	if (cacheFile)
+	{
+		fseek(cacheFile, 0, SEEK_END);
+		dataSize = ftell(cacheFile);
+		data     = (uint8_t*) malloc(dataSize * sizeof(uint8_t));
+		if (!data)
+		{
+			fclose(cacheFile);
+			VkReportError(vk, VK_ERROR_CODE_ALLOCATION_FAILURE, "Failed to allocate pipeline cache data");
+			return false;
+		}
+		fseek(cacheFile, 0, SEEK_SET);
+		dataSize = fread(data, sizeof(uint8_t), dataSize, cacheFile);
+		fclose(cacheFile);
+	}
+
+	VkPipelineCacheCreateInfo createInfo = {
+		.sType           = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+		.pNext           = NULL,
+		.flags           = 0,
+		.initialDataSize = dataSize,
+		.pInitialData    = data
+	};
+	if (!VkValidate(vk, vkCreatePipelineCache(vk->device, &createInfo, vk->allocation, &vk->pipelineCache)))
+	{
+		free(data);
+		return false;
+	}
+	free(data);
+	return true;
+}
+
 bool VkSetup(VkData* vk)
 {
 	if (!vk) return false;
@@ -649,6 +695,7 @@ bool VkSetup(VkData* vk)
 		!VkSelectPhysicalDevice(vk) ||
 		!VkSetupDevice(vk) ||
 		!VkSetupVMA(vk) ||
+		!VkSetupPipelineCache(vk) ||
 		!VkSetupFrames(vk))
 	{
 		VkCleanup(vk);
@@ -658,11 +705,42 @@ bool VkSetup(VkData* vk)
 	return true;
 }
 
+static void VkCleanupPipelineCache(VkData* vk)
+{
+	FILE* cacheFile = fopen("pipelines.cache", "wb");
+	if (cacheFile)
+	{
+		do {
+			size_t dataSize = 0;
+			if (!VkValidate(vk, vkGetPipelineCacheData(vk->device, vk->pipelineCache, &dataSize, NULL))) break;
+			uint8_t* data = (uint8_t*) malloc(dataSize * sizeof(uint8_t));
+			if (!data)
+			{
+				VkReportError(vk, VK_ERROR_CODE_ALLOCATION_FAILURE, "Failed to allocate pipeline cache data");
+				break;
+			}
+			if (!VkValidate(vk, vkGetPipelineCacheData(vk->device, vk->pipelineCache, &dataSize, data)))
+			{
+				free(data);
+				break;
+			}
+			fwrite(data, sizeof(uint8_t), dataSize, cacheFile);
+			free(data);
+		}
+		while (false);
+		fclose(cacheFile);
+	}
+
+	vkDestroyPipelineCache(vk->device, vk->pipelineCache, vk->allocation);
+	vk->pipelineCache = NULL;
+}
+
 void VkCleanup(VkData* vk)
 {
 	if (!vk) return;
 
 	VkCleanupFrames(vk);
+	VkCleanupPipelineCache(vk);
 	vmaDestroyAllocator(vk->allocator);
 	vkDestroyDevice(vk->device, vk->allocation);
 	vkDestroyInstance(vk->instance, vk->allocation);

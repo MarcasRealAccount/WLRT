@@ -1,3 +1,4 @@
+#include "Exit.h"
 #include "Vk.h"
 #include "VkFuncs/VkFuncs.h"
 #include "Window.h"
@@ -5,7 +6,9 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void GLFWErrCB(int code, const char* msg)
@@ -116,18 +119,18 @@ static bool CreateBLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
 
 	VkAccStruct uncompressed;
 	memset(&uncompressed, 0, sizeof(uncompressed));
-	if (!VkAccStructBuilderSetTriangles(vk, builder, 0, vkGetBufferDeviceAddress(vk->device, &vbAddressInfo), VK_FORMAT_R32G32B32A32_SFLOAT, sizeof(Vertex), sizeof(vertices) / sizeof(*vertices), vkGetBufferDeviceAddress(vk->device, &ibAddressInfo), VK_INDEX_TYPE_UINT32, sizeof(indices) / sizeof(*indices)) ||
-		!VkAccStructBuilderPrepare(vk, builder, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR, 1, 0) ||
-		!VkAccStructBuilderBuild(vk, builder, &uncompressed) ||
-		!VkAccStructBuilderCompact(vk, builder, &uncompressed, blas))
+	if (!VkAccStructBuilderSetTriangles(builder, 0, vkGetBufferDeviceAddress(vk->device, &vbAddressInfo), VK_FORMAT_R32G32B32A32_SFLOAT, sizeof(Vertex), sizeof(vertices) / sizeof(*vertices), vkGetBufferDeviceAddress(vk->device, &ibAddressInfo), VK_INDEX_TYPE_UINT32, sizeof(indices) / sizeof(*indices)) ||
+		!VkAccStructBuilderPrepare(builder, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR, 1, 0) ||
+		!VkAccStructBuilderBuild(builder, &uncompressed) ||
+		!VkAccStructBuilderCompact(builder, &uncompressed, blas))
 	{
-		VkCleanupAccStruct(vk, &uncompressed);
+		VkCleanupAccStruct(&uncompressed);
 		vmaDestroyBuffer(vk->allocator, vertexBuffer, vertexBufferA);
 		vmaDestroyBuffer(vk->allocator, indexBuffer, indexBufferA);
 		return false;
 	}
 
-	VkCleanupAccStruct(vk, &uncompressed);
+	VkCleanupAccStruct(&uncompressed);
 	vmaDestroyBuffer(vk->allocator, vertexBuffer, vertexBufferA);
 	vmaDestroyBuffer(vk->allocator, indexBuffer, indexBufferA);
 	return true;
@@ -170,7 +173,7 @@ static bool CreateTLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
                    { 0.0f, 1.0f, 0.0f, 0.0f },
                    { 0.0f, 0.0f, 1.0f, 0.0f }}
 	};
-	VkWriteTLASInstance(vk, instancesData, blas, 0, &identityMatrix, 0, 0xFF, 0, 0);
+	VkWriteTLASInstance(instancesData, blas, 0, &identityMatrix, 0, 0xFF, 0, 0);
 	vmaUnmapMemory(vk->allocator, instancesBufferA);
 
 	VkBufferDeviceAddressInfo iAddressInfo = {
@@ -178,9 +181,9 @@ static bool CreateTLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
 		.pNext  = NULL,
 		.buffer = instancesBuffer
 	};
-	if (!VkAccStructBuilderSetInstances(vk, builder, 0, vkGetBufferDeviceAddress(vk->device, &iAddressInfo), 1) ||
-		!VkAccStructBuilderPrepare(vk, builder, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR, 1, 0) ||
-		!VkAccStructBuilderBuild(vk, builder, tlas))
+	if (!VkAccStructBuilderSetInstances(builder, 0, vkGetBufferDeviceAddress(vk->device, &iAddressInfo), 1) ||
+		!VkAccStructBuilderPrepare(builder, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR, 1, 0) ||
+		!VkAccStructBuilderBuild(builder, tlas))
 	{
 		vmaDestroyBuffer(vk->allocator, instancesBuffer, instancesBufferA);
 		return false;
@@ -194,97 +197,123 @@ static bool CreateAS(VkData* vk, VkAccStruct* blas, VkAccStruct* tlas)
 {
 	VkAccStructBuilder builder;
 	memset(&builder, 0, sizeof(builder));
-	if (!VkSetupAccStructBuilder(vk, &builder)) return false;
+	builder.vk = vk;
+	if (!VkSetupAccStructBuilder(&builder)) return false;
 
 	if (!CreateBLAS(vk, &builder, blas))
 	{
-		VkCleanupAccStructBuilder(vk, &builder);
+		VkCleanupAccStructBuilder(&builder);
 		return false;
 	}
 
 	if (!CreateTLAS(vk, &builder, blas, tlas))
 	{
-		VkCleanupAccStruct(vk, blas);
-		VkCleanupAccStructBuilder(vk, &builder);
+		VkCleanupAccStruct(blas);
+		VkCleanupAccStructBuilder(&builder);
 		return false;
 	}
 
-	VkCleanupAccStructBuilder(vk, &builder);
+	VkCleanupAccStructBuilder(&builder);
 	return true;
+}
+
+static void GLFWOnExit(void* data)
+{
+	(void) data;
+	glfwTerminate();
+}
+
+static void VkDeviceWaitIdleOnExit(void* data)
+{
+	vkDeviceWaitIdle(((VkData*) data)->device);
+}
+
+static void VkOnExit(void* data)
+{
+	VkCleanup((VkData*) data);
+}
+
+static void VkSwapchainOnExit(void* data)
+{
+	VkCleanupSwapchain((VkSwapchainData*) data);
+}
+
+static void VkAccStructOnExit(void* data)
+{
+	VkCleanupAccStruct((VkAccStruct*) data);
+}
+
+static void VkRayTracingPipelineOnExit(void* data)
+{
+	VkCleanupRayTracingPipeline((VkRayTracingPipelineData*) data);
+}
+
+static void WindowOnExit(void* data)
+{
+	WLRTDestroyWindow((WindowData*) data);
 }
 
 int main(int argc, char** argv)
 {
+	(void) argc;
+	(void) argv;
+	ExitAssert(ExitSetup(), 1);
+
 	glfwSetErrorCallback(&GLFWErrCB);
-	if (!glfwInit())
-		return 1;
+	ExitAssert(glfwInit(), 1);
+	ExitRegister(&GLFWOnExit, NULL);
 
-	VkData vk;
-	memset(&vk, 0, sizeof(vk));
-	vk.framesInFlight = 2;
-	vk.errorCallback  = &VKErrCB;
-	if (!VkSetup(&vk))
-	{
-		glfwTerminate();
-		return 1;
-	}
-	VkLoadFuncs(vk.instance, vk.device);
+	VkData* vk = (VkData*) malloc(sizeof(VkData));
+	ExitAssert(vk, 1);
+	memset(vk, 0, sizeof(VkData));
+	vk->framesInFlight = 2;
+	vk->errorCallback  = &VKErrCB;
+	ExitAssert(VkSetup(vk), 1);
+	ExitRegister(&VkOnExit, vk);
+	VkLoadFuncs(vk->instance, vk->device);
 
-	WindowData window = {
-		.handle = NULL,
-		.x      = 1 << 31,
-		.y      = 1 << 31,
-		.width  = 1280,
-		.height = 720
-	};
-	VkSwapchainData vkSwapchain;
-	memset(&vkSwapchain, 0, sizeof(vkSwapchain));
-	vkSwapchain.window = &window;
-	if (!WLRTCreateWindow(&window))
-	{
-		VkCleanup(&vk);
-		glfwTerminate();
-		return 1;
-	}
-	if (!VkSetupSwapchain(&vk, &vkSwapchain))
-	{
-		WLRTDestroyWindow(&window);
-		VkCleanup(&vk);
-		glfwTerminate();
-		return 1;
-	}
+	WindowData* window = (WindowData*) malloc(sizeof(WindowData));
+	ExitAssert(window, 1);
+	memset(window, 0, sizeof(WindowData));
+	window->handle = NULL;
+	window->x      = 1 << 31;
+	window->y      = 1 << 31;
+	window->width  = 1280;
+	window->height = 720;
 
-	VkAccStruct blas;
-	VkAccStruct tlas;
-	memset(&blas, 0, sizeof(blas));
-	memset(&tlas, 0, sizeof(tlas));
-	if (!CreateAS(&vk, &blas, &tlas))
-	{
-		VkCleanupSwapchain(&vk, &vkSwapchain);
-		WLRTDestroyWindow(&window);
-		VkCleanup(&vk);
-		glfwTerminate();
-		return 1;
-	}
+	VkSwapchainData* vkSwapchain = (VkSwapchainData*) malloc(sizeof(VkSwapchainData));
+	ExitAssert(vkSwapchain, 1);
+	memset(vkSwapchain, 0, sizeof(VkSwapchainData));
+	vkSwapchain->vk     = vk;
+	vkSwapchain->window = window;
+	ExitAssert(WLRTCreateWindow(window), 1);
+	ExitRegister(&WindowOnExit, window);
+	ExitAssert(VkSetupSwapchain(vkSwapchain), 1);
+	ExitRegister(&VkSwapchainOnExit, vkSwapchain);
 
-	VkRayTracingPipelineData rtPipeline;
-	memset(&rtPipeline, 0, sizeof(rtPipeline));
-	if (!VkSetupRayTracingPipeline(&vk, &rtPipeline))
-	{
-		VkCleanupAccStruct(&vk, &tlas);
-		VkCleanupAccStruct(&vk, &blas);
-		VkCleanupSwapchain(&vk, &vkSwapchain);
-		WLRTDestroyWindow(&window);
-		VkCleanup(&vk);
-		glfwTerminate();
-		return 1;
-	}
+	VkAccStruct* bothLass = (VkAccStruct*) malloc(2 * sizeof(VkAccStruct));
+	ExitAssert(bothLass, 1);
+	memset(bothLass, 0, 2 * sizeof(VkAccStruct));
+	bothLass[0].vk = vk;
+	bothLass[1].vk = vk;
+	ExitAssert(CreateAS(vk, bothLass, bothLass + 1), 1);
+	ExitRegister(&VkAccStructOnExit, bothLass);
+	ExitRegister(&VkAccStructOnExit, bothLass + 1);
 
-	WLRTMakeWindowVisible(&window);
+	VkRayTracingPipelineData* rtPipeline = (VkRayTracingPipelineData*) malloc(sizeof(VkRayTracingPipelineData));
+	ExitAssert(rtPipeline, 1);
+	memset(rtPipeline, 0, sizeof(VkRayTracingPipelineData));
+	rtPipeline->vk = vk;
+	ExitAssert(VkSetupRayTracingPipeline(rtPipeline), 1);
+	ExitRegister(&VkRayTracingPipelineOnExit, rtPipeline);
+
+	WLRTMakeWindowVisible(window);
+
+	ExitRegister(&VkDeviceWaitIdleOnExit, vk);
 
 	double lastFrameTime = glfwGetTime();
 	double timer         = 0.0;
-	while (!window.wantsClose)
+	while (!window->wantsClose)
 	{
 		double frameTime = glfwGetTime();
 		double deltaTime = frameTime - lastFrameTime;
@@ -297,10 +326,10 @@ int main(int argc, char** argv)
 
 		WLRTWindowPollEvents();
 
-		VkSwapchainData* swapchains[] = { &vkSwapchain };
-		if (!VkBeginFrame(&vk, swapchains, sizeof(swapchains) / sizeof(*swapchains))) break;
+		VkSwapchainData* swapchains[] = { vkSwapchain };
+		ExitAssert(VkBeginFrame(vk, swapchains, sizeof(swapchains) / sizeof(*swapchains)), 2);
 
-		VkFrameData* frame = VkGetCurrentFrame(&vk);
+		VkFrameData* frame = VkGetCurrentFrame(vk);
 
 		for (uint32_t i = 0; i < sizeof(swapchains) / sizeof(*swapchains); ++i)
 		{
@@ -336,21 +365,8 @@ int main(int argc, char** argv)
 			vkCmdEndRendering(frame->buffer);
 		}
 
-		if (!VkEndFrame(&vk)) break;
+		ExitAssert(VkEndFrame(vk), 2);
 	}
 
-	vkDeviceWaitIdle(vk.device);
-
-	VkCleanupRayTracingPipeline(&vk, &rtPipeline);
-
-	VkCleanupAccStruct(&vk, &tlas);
-	VkCleanupAccStruct(&vk, &blas);
-
-	VkCleanupSwapchain(&vk, &vkSwapchain);
-	WLRTDestroyWindow(&window);
-
-	VkCleanup(&vk);
-
-	glfwTerminate();
 	return 0;
 }

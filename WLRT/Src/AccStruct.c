@@ -3,9 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-void VkWriteTLASInstance(VkData* vk, void* buffer, VkAccStruct* accStruct, uint32_t index, const VkTransformMatrixKHR* transform, uint32_t customIndex, uint8_t mask, uint32_t sbtOffset, VkGeometryInstanceFlagsKHR flags)
+void VkWriteTLASInstance(void* buffer, VkAccStruct* accStruct, uint32_t index, const VkTransformMatrixKHR* transform, uint32_t customIndex, uint8_t mask, uint32_t sbtOffset, VkGeometryInstanceFlagsKHR flags)
 {
-	if (!vk || !buffer || !accStruct) return;
+	if (!buffer || !accStruct || !accStruct->vk) return;
+	VkData* vk = accStruct->vk;
 
 	VkAccelerationStructureDeviceAddressInfoKHR asAddressInfo = {
 		.sType                 = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
@@ -23,9 +24,10 @@ void VkWriteTLASInstance(VkData* vk, void* buffer, VkAccStruct* accStruct, uint3
 	instance->accelerationStructureReference         = vkGetAccelerationStructureDeviceAddressKHR(vk->device, &asAddressInfo);
 }
 
-bool VkSetupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder)
+bool VkSetupAccStructBuilder(VkAccStructBuilder* builder)
 {
-	if (!vk || !builder) return false;
+	if (!builder || !builder->vk) return false;
+	VkData* vk = builder->vk;
 
 	VkQueryPoolCreateInfo createInfo = {
 		.sType              = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
@@ -54,9 +56,10 @@ bool VkSetupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder)
 	return true;
 }
 
-void VkCleanupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder)
+void VkCleanupAccStructBuilder(VkAccStructBuilder* builder)
 {
-	if (!vk || !builder) return;
+	if (!builder || !builder->vk) return;
+	VkData* vk = builder->vk;
 
 	free(builder->geometries);
 	free(builder->primitiveCounts);
@@ -73,9 +76,10 @@ void VkCleanupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder)
 	builder->ranges                = NULL;
 }
 
-void VkCleanupAccStruct(VkData* vk, VkAccStruct* accStruct)
+void VkCleanupAccStruct(VkAccStruct* accStruct)
 {
-	if (!vk || !accStruct) return;
+	if (!accStruct || !accStruct->vk) return;
+	VkData* vk = accStruct->vk;
 
 	vmaDestroyBuffer(vk->allocator, accStruct->buffer, accStruct->allocation);
 	vkDestroyAccelerationStructureKHR(vk->device, accStruct->handle, vk->allocation);
@@ -146,9 +150,11 @@ static bool VkAccStructBuilderEnsureGeometries(VkData* vk, VkAccStructBuilder* b
 	return true;
 }
 
-bool VkAccStructBuilderSetInstances(VkData* vk, VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress deviceAddress, uint32_t count)
+bool VkAccStructBuilderSetInstances(VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress deviceAddress, uint32_t count)
 {
-	if (!vk || !builder || !VkAccStructBuilderEnsureGeometries(vk, builder, geometryIndex)) return false;
+	if (!builder || !builder->vk) return false;
+	VkData* vk = builder->vk;
+	if (!VkAccStructBuilderEnsureGeometries(vk, builder, geometryIndex)) return false;
 
 	VkAccelerationStructureGeometryKHR* instances    = builder->geometries + geometryIndex;
 	instances->sType                                 = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -167,9 +173,11 @@ bool VkAccStructBuilderSetInstances(VkData* vk, VkAccStructBuilder* builder, uin
 	return true;
 }
 
-bool VkAccStructBuilderSetTriangles(VkData* vk, VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress vertexAddress, VkFormat vertexFormat, uint32_t vertexStride, uint32_t maxVertex, VkDeviceAddress indexAddress, VkIndexType indexType, uint32_t triangleCount)
+bool VkAccStructBuilderSetTriangles(VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress vertexAddress, VkFormat vertexFormat, uint32_t vertexStride, uint32_t maxVertex, VkDeviceAddress indexAddress, VkIndexType indexType, uint32_t triangleCount)
 {
-	if (!vk || !builder || !VkAccStructBuilderEnsureGeometries(vk, builder, geometryIndex)) return false;
+	if (!builder || !builder->vk) return false;
+	VkData* vk = builder->vk;
+	if (!VkAccStructBuilderEnsureGeometries(vk, builder, geometryIndex)) return false;
 
 	VkAccelerationStructureGeometryKHR* triangles             = builder->geometries + geometryIndex;
 	triangles->sType                                          = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -193,9 +201,9 @@ bool VkAccStructBuilderSetTriangles(VkData* vk, VkAccStructBuilder* builder, uin
 	return true;
 }
 
-bool VkAccStructBuilderPrepare(VkData* vk, VkAccStructBuilder* builder, VkAccelerationStructureTypeKHR type, VkBuildAccelerationStructureFlagsKHR flags, uint32_t geometryCount, uint32_t firstGeometry)
+bool VkAccStructBuilderPrepare(VkAccStructBuilder* builder, VkAccelerationStructureTypeKHR type, VkBuildAccelerationStructureFlagsKHR flags, uint32_t geometryCount, uint32_t firstGeometry)
 {
-	if (!vk || !builder) return false;
+	if (!builder) return false;
 	builder->type          = type;
 	builder->flags         = flags;
 	builder->geometryCount = geometryCount;
@@ -233,9 +241,10 @@ static bool VkAccStructBuilderEnsureSizes(VkData* vk, VkAccStructBuilder* builde
 	return true;
 }
 
-static bool VkAccStructBuilderEnsureScratchSize(VkData* vk, VkAccStructBuilder* builder, size_t scratchSize)
+static bool VkAccStructBuilderEnsureScratchSize(VkAccStructBuilder* builder, size_t scratchSize)
 {
-	if (!vk || !builder) return false;
+	if (!builder || !builder->vk) return false;
+	VkData* vk = builder->vk;
 
 	if (scratchSize >= builder->scratchBufferCapacity)
 	{
@@ -272,9 +281,10 @@ static bool VkAccStructBuilderEnsureScratchSize(VkData* vk, VkAccStructBuilder* 
 	return true;
 }
 
-bool VkAccStructBuilderBuild(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* accStruct)
+bool VkAccStructBuilderBuild(VkAccStructBuilder* builder, VkAccStruct* accStruct)
 {
-	if (!vk || !builder || !accStruct) return false;
+	if (!builder || !builder->vk || !accStruct) return false;
+	VkData* vk = builder->vk;
 
 	VkAccStructBuilderEnsureSizes(vk, builder);
 
@@ -313,13 +323,13 @@ bool VkAccStructBuilderBuild(VkData* vk, VkAccStructBuilder* builder, VkAccStruc
 	};
 	if (!VkValidate(vk, vkCreateAccelerationStructureKHR(vk->device, &aCreateInfo, vk->allocation, &accStruct->handle)))
 	{
-		VkCleanupAccStruct(vk, accStruct);
+		VkCleanupAccStruct(accStruct);
 		return false;
 	}
 
-	if (!VkAccStructBuilderEnsureScratchSize(vk, builder, builder->buildScratchSize))
+	if (!VkAccStructBuilderEnsureScratchSize(builder, builder->buildScratchSize))
 	{
-		VkCleanupAccStruct(vk, accStruct);
+		VkCleanupAccStruct(accStruct);
 		return false;
 	}
 
@@ -328,7 +338,7 @@ bool VkAccStructBuilderBuild(VkData* vk, VkAccStructBuilder* builder, VkAccStruc
 	VkCommandBuffer buffer = NULL;
 	if (!VkBeginCmdBuffer(vk, &buffer))
 	{
-		VkCleanupAccStruct(vk, accStruct);
+		VkCleanupAccStruct(accStruct);
 		return false;
 	}
 
@@ -382,15 +392,16 @@ bool VkAccStructBuilderBuild(VkData* vk, VkAccStructBuilder* builder, VkAccStruc
 
 	if (!VkEndCmdBufferWait(vk))
 	{
-		VkCleanupAccStruct(vk, accStruct);
+		VkCleanupAccStruct(accStruct);
 		return false;
 	}
 	return true;
 }
 
-bool VkAccStructBuilderCompact(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* accStruct, VkAccStruct* compactAccStruct)
+bool VkAccStructBuilderCompact(VkAccStructBuilder* builder, VkAccStruct* accStruct, VkAccStruct* compactAccStruct)
 {
-	if (!vk || !builder || !accStruct || !compactAccStruct) return false;
+	if (!builder || !builder->vk || !accStruct || !compactAccStruct) return false;
+	VkData* vk = builder->vk;
 
 	VkDeviceSize size = 0;
 	if (!VkValidate(vk, vkGetQueryPoolResults(vk->device, builder->queryPool, 0, 1, sizeof(size), &size, sizeof(size), VK_QUERY_RESULT_64_BIT))) return false;
@@ -430,14 +441,14 @@ bool VkAccStructBuilderCompact(VkData* vk, VkAccStructBuilder* builder, VkAccStr
 	};
 	if (!VkValidate(vk, vkCreateAccelerationStructureKHR(vk->device, &aCreateInfo, vk->allocation, &compactAccStruct->handle)))
 	{
-		VkCleanupAccStruct(vk, compactAccStruct);
+		VkCleanupAccStruct(compactAccStruct);
 		return false;
 	}
 
 	VkCommandBuffer buffer = NULL;
 	if (!VkBeginCmdBuffer(vk, &buffer))
 	{
-		VkCleanupAccStruct(vk, compactAccStruct);
+		VkCleanupAccStruct(compactAccStruct);
 		return false;
 	}
 
@@ -452,7 +463,7 @@ bool VkAccStructBuilderCompact(VkData* vk, VkAccStructBuilder* builder, VkAccStr
 
 	if (!VkEndCmdBufferWait(vk))
 	{
-		VkCleanupAccStruct(vk, compactAccStruct);
+		VkCleanupAccStruct(compactAccStruct);
 		return false;
 	}
 	return true;

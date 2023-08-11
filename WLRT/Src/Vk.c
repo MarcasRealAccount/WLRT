@@ -224,7 +224,8 @@ static void VkCleanupFrame(VkData* vk, VkFrameData* frame)
 
 bool VkBeginFrame(VkData* vk, VkSwapchainData** swapchains, uint32_t swapchainCount)
 {
-	if (!vk || !swapchains || swapchainCount == 0 || !VkSetupFrames(vk)) return false;
+	if (!vk || !swapchains || swapchainCount == 0 || !VkSetupFrames(vk))
+		return false;
 
 	VkFrameData* frame = VkGetCurrentFrame(vk);
 	if (!frame)
@@ -241,7 +242,8 @@ bool VkBeginFrame(VkData* vk, VkSwapchainData** swapchains, uint32_t swapchainCo
 		.pSemaphores    = &frame->semaphore,
 		.pValues        = &frame->value
 	};
-	if (!VkValidate(vk, vkWaitSemaphores(vk->device, &waitInfo, ~0ULL))) return false;
+	if (!VkValidate(vk, vkWaitSemaphores(vk->device, &waitInfo, ~0ULL)))
+		return false;
 
 	VkImageMemoryBarrier2* imageBarriers = (VkImageMemoryBarrier2*) malloc(swapchainCount * sizeof(VkImageMemoryBarrier2));
 
@@ -267,7 +269,7 @@ bool VkBeginFrame(VkData* vk, VkSwapchainData** swapchains, uint32_t swapchainCo
 		VkSwapchainData* swapchain = swapchains[i];
 		frame->swapchainDatas[i]   = swapchain;
 
-		if (swapchain->invalid && !VkSetupSwapchain(vk, swapchain))
+		if (swapchain->invalid && !VkSetupSwapchain(swapchain))
 		{
 			free(imageBarriers);
 			VkCleanupFrame(vk, frame);
@@ -283,7 +285,7 @@ bool VkBeginFrame(VkData* vk, VkSwapchainData** swapchains, uint32_t swapchainCo
 		switch (vk->lastResult)
 		{
 		case VK_ERROR_OUT_OF_DATE_KHR:
-			if (!VkSetupSwapchain(vk, swapchain) ||
+			if (!VkSetupSwapchain(swapchain) ||
 				!VkValidate(vk, vkAcquireNextImageKHR(vk->device, swapchain->swapchain, ~0ULL, swapchain->imageAvailable[vk->currentFrame], NULL, &swapchain->imageIndex)))
 			{
 				free(imageBarriers);

@@ -4,6 +4,7 @@ static PFN_vkCreateRayTracingPipelinesKHR pfnVkCreateRayTracingPipelinesKHR = NU
 
 void VkLoadRayTracingFuncs(VkInstance instance, VkDevice device)
 {
+	(void) instance;
 	pfnVkCreateRayTracingPipelinesKHR = (PFN_vkCreateRayTracingPipelinesKHR) vkGetDeviceProcAddr(device, "vkCreateRayTracingPipelinesKHR");
 }
 

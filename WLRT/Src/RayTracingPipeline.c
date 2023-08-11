@@ -1,8 +1,9 @@
 #include "Vk.h"
 
-bool VkSetupRayTracingPipeline(VkData* vk, VkRayTracingPipelineData* rtPipeline)
+bool VkSetupRayTracingPipeline(VkRayTracingPipelineData* rtPipeline)
 {
-	if (!vk || !rtPipeline) return false;
+	if (!rtPipeline || !rtPipeline->vk) return false;
+	VkData* vk = rtPipeline->vk;
 
 	VkRayTracingPipelineCreateInfoKHR createInfo = {
 		.sType                        = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
@@ -24,9 +25,10 @@ bool VkSetupRayTracingPipeline(VkData* vk, VkRayTracingPipelineData* rtPipeline)
 	return true;
 }
 
-void VkCleanupRayTracingPipeline(VkData* vk, VkRayTracingPipelineData* rtPipeline)
+void VkCleanupRayTracingPipeline(VkRayTracingPipelineData* rtPipeline)
 {
-	if (!vk || !rtPipeline) return;
+	if (!rtPipeline || !rtPipeline->vk) return;
+	VkData* vk = rtPipeline->vk;
 
 	vkDestroyPipeline(vk->device, rtPipeline->handle, vk->allocation);
 }

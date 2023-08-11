@@ -61,6 +61,7 @@ typedef struct VkData
 
 typedef struct VkSwapchainData
 {
+	VkData*            vk;
 	struct WindowData* window;
 
 	VkSurfaceKHR       surface;
@@ -80,6 +81,7 @@ typedef struct VkSwapchainData
 
 typedef struct VkAccStructBuilder
 {
+	VkData*     vk;
 	VkQueryPool queryPool;
 
 	VkAccelerationStructureTypeKHR       type;
@@ -104,6 +106,8 @@ typedef struct VkAccStructBuilder
 
 typedef struct VkAccStruct
 {
+	VkData* vk;
+
 	VkAccelerationStructureKHR handle;
 	VkBuffer                   buffer;
 	VmaAllocation              allocation;
@@ -111,6 +115,8 @@ typedef struct VkAccStruct
 
 typedef struct VkRayTracingPipelineData
 {
+	VkData* vk;
+
 	VkPipeline handle;
 } VkRayTracingPipelineData;
 
@@ -136,19 +142,19 @@ void VkCleanup(VkData* vk);
 bool VkSetupFrames(VkData* vk);
 void VkCleanupFrames(VkData* vk);
 
-bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain);
-void VkCleanupSwapchain(VkData* vk, VkSwapchainData* swapchain);
+bool VkSetupSwapchain(VkSwapchainData* swapchain);
+void VkCleanupSwapchain(VkSwapchainData* swapchain);
 
-void VkWriteTLASInstance(VkData* vk, void* buffer, VkAccStruct* accStruct, uint32_t index, const VkTransformMatrixKHR* transform, uint32_t customIndex, uint8_t mask, uint32_t sbtOffset, VkGeometryInstanceFlagsKHR flags);
+void VkWriteTLASInstance(void* buffer, VkAccStruct* accStruct, uint32_t index, const VkTransformMatrixKHR* transform, uint32_t customIndex, uint8_t mask, uint32_t sbtOffset, VkGeometryInstanceFlagsKHR flags);
 
-bool VkSetupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder);
-void VkCleanupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder);
-void VkCleanupAccStruct(VkData* vk, VkAccStruct* accStruct);
-bool VkAccStructBuilderSetInstances(VkData* vk, VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress deviceAddress, uint32_t count);
-bool VkAccStructBuilderSetTriangles(VkData* vk, VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress vertexAddress, VkFormat vertexFormat, uint32_t vertexStride, uint32_t maxVertex, VkDeviceAddress indexAddress, VkIndexType indexType, uint32_t triangleCount);
-bool VkAccStructBuilderPrepare(VkData* vk, VkAccStructBuilder* builder, VkAccelerationStructureTypeKHR type, VkBuildAccelerationStructureFlagsKHR flags, uint32_t geometryCount, uint32_t firstGeometry);
-bool VkAccStructBuilderBuild(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* accStruct);
-bool VkAccStructBuilderCompact(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* accStruct, VkAccStruct* compactAccStruct);
+bool VkSetupAccStructBuilder(VkAccStructBuilder* builder);
+void VkCleanupAccStructBuilder(VkAccStructBuilder* builder);
+void VkCleanupAccStruct(VkAccStruct* accStruct);
+bool VkAccStructBuilderSetInstances(VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress deviceAddress, uint32_t count);
+bool VkAccStructBuilderSetTriangles(VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress vertexAddress, VkFormat vertexFormat, uint32_t vertexStride, uint32_t maxVertex, VkDeviceAddress indexAddress, VkIndexType indexType, uint32_t triangleCount);
+bool VkAccStructBuilderPrepare(VkAccStructBuilder* builder, VkAccelerationStructureTypeKHR type, VkBuildAccelerationStructureFlagsKHR flags, uint32_t geometryCount, uint32_t firstGeometry);
+bool VkAccStructBuilderBuild(VkAccStructBuilder* builder, VkAccStruct* accStruct);
+bool VkAccStructBuilderCompact(VkAccStructBuilder* builder, VkAccStruct* accStruct, VkAccStruct* compactAccStruct);
 
-bool VkSetupRayTracingPipeline(VkData* vk, VkRayTracingPipelineData* rtPipeline);
-void VkCleanupRayTracingPipeline(VkData* vk, VkRayTracingPipelineData* rtPipeline);
+bool VkSetupRayTracingPipeline(VkRayTracingPipelineData* rtPipeline);
+void VkCleanupRayTracingPipeline(VkRayTracingPipelineData* rtPipeline);

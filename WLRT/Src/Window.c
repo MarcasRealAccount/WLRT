@@ -136,13 +136,16 @@ static VkPresentModeKHR VkSelectPresentMode(VkData* vk, VkSwapchainData* swapcha
 	return selectedMode;
 }
 
-bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
+bool VkSetupSwapchain(VkSwapchainData* swapchain)
 {
-	if (!vk || !swapchain || !swapchain->window) return false;
+	if (!swapchain || !swapchain->vk || !swapchain->window)
+		return false;
+	VkData* vk = swapchain->vk;
 
 	if (!swapchain->surface)
 	{
-		if (!VkValidate(vk, glfwCreateWindowSurface(vk->instance, swapchain->window->handle, vk->allocation, &swapchain->surface))) return false;
+		if (!VkValidate(vk, glfwCreateWindowSurface(vk->instance, swapchain->window->handle, vk->allocation, &swapchain->surface)))
+			return false;
 	}
 
 	if (swapchain->swapchain)
@@ -162,7 +165,7 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 	VkSurfaceCapabilitiesKHR caps;
 	if (!VkValidate(vk, vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk->physicalDevice, swapchain->surface, &caps)))
 	{
-		VkCleanupSwapchain(vk, swapchain);
+		VkCleanupSwapchain(swapchain);
 		return false;
 	}
 	uint32_t imageCount       = min(caps.minImageCount + 1, caps.maxImageCount);
@@ -207,26 +210,26 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 	};
 	if (!VkValidate(vk, vkCreateSwapchainKHR(vk->device, &createInfo, vk->allocation, &swapchain->swapchain)))
 	{
-		VkCleanupSwapchain(vk, swapchain);
+		VkCleanupSwapchain(swapchain);
 		return false;
 	}
 	if (oldSwapchain) vkDestroySwapchainKHR(vk->device, oldSwapchain, vk->allocation);
 	if (!VkValidate(vk, vkGetSwapchainImagesKHR(vk->device, swapchain->swapchain, &swapchain->imageCount, NULL)))
 	{
-		VkCleanupSwapchain(vk, swapchain);
+		VkCleanupSwapchain(swapchain);
 		return false;
 	}
 	swapchain->images = (VkImage*) malloc(swapchain->imageCount * sizeof(VkImage));
 	swapchain->views  = (VkImageView*) malloc(swapchain->imageCount * sizeof(VkImageView));
 	if (!swapchain->images || !swapchain->views)
 	{
-		VkCleanupSwapchain(vk, swapchain);
+		VkCleanupSwapchain(swapchain);
 		VkReportError(vk, VK_ERROR_CODE_ALLOCATION_FAILURE, "Failed to allocate swapchain buffers");
 		return false;
 	}
 	if (!VkValidate(vk, vkGetSwapchainImagesKHR(vk->device, swapchain->swapchain, &swapchain->imageCount, swapchain->images)))
 	{
-		VkCleanupSwapchain(vk, swapchain);
+		VkCleanupSwapchain(swapchain);
 		return false;
 	}
 	for (uint32_t i = 0; i < swapchain->imageCount; ++i)
@@ -243,7 +246,7 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 		};
 		if (!VkValidate(vk, vkCreateImageView(vk->device, &ivCreateInfo, vk->allocation, swapchain->views + i)))
 		{
-			VkCleanupSwapchain(vk, swapchain);
+			VkCleanupSwapchain(swapchain);
 			return false;
 		}
 	}
@@ -261,7 +264,7 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 			if (!VkValidate(vk, vkCreateSemaphore(vk->device, &sCreateInfo, vk->allocation, swapchain->imageAvailable + i)) ||
 				!VkValidate(vk, vkCreateSemaphore(vk->device, &sCreateInfo, vk->allocation, swapchain->renderFinished + i)))
 			{
-				VkCleanupSwapchain(vk, swapchain);
+				VkCleanupSwapchain(swapchain);
 				return false;
 			}
 		}
@@ -270,9 +273,11 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 	return true;
 }
 
-void VkCleanupSwapchain(VkData* vk, VkSwapchainData* swapchain)
+void VkCleanupSwapchain(VkSwapchainData* swapchain)
 {
-	if (!vk || !swapchain) return;
+	if (!swapchain || !swapchain->vk || !swapchain->window)
+		return;
+	VkData* vk = swapchain->vk;
 
 	for (uint32_t i = 0; i < swapchain->imageCount; ++i)
 	{

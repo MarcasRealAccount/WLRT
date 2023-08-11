@@ -135,26 +135,6 @@ static bool CreateBLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
 
 static bool CreateTLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* blas, VkAccStruct* tlas)
 {
-	VkAccelerationStructureDeviceAddressInfoKHR blasAddressInfo = {
-		.sType                 = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
-		.pNext                 = NULL,
-		.accelerationStructure = blas->handle
-	};
-
-	VkGeometryInstanceFlagsKHR flags = 0;
-
-	VkAccelerationStructureInstanceKHR instances[] = {
-		{.transform.matrix = {
-			  { 1.0f, 0.0f, 0.0f, 0.0f },
-			  { 0.0f, 1.0f, 0.0f, 0.0f },
-			  { 0.0f, 0.0f, 1.0f, 0.0f } },
-         .instanceCustomIndex                    = 0,
-         .mask                                   = 0xFF,
-         .instanceShaderBindingTableRecordOffset = 0,
-         .flags                                  = flags,
-         .accelerationStructureReference         = vkGetAccelerationStructureDeviceAddressKHR(vk->device, &blasAddressInfo)}
-	};
-
 	VkBuffer      instancesBuffer  = NULL;
 	VmaAllocation instancesBufferA = NULL;
 	void*         instancesData    = NULL;
@@ -163,7 +143,7 @@ static bool CreateTLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
 		.sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		.pNext                 = NULL,
 		.flags                 = 0,
-		.size                  = sizeof(instances),
+		.size                  = 1 * sizeof(VkAccelerationStructureInstanceKHR),
 		.usage                 = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 		.sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
 		.queueFamilyIndexCount = 0,
@@ -185,7 +165,12 @@ static bool CreateTLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
 		vmaDestroyBuffer(vk->allocator, instancesBuffer, instancesBufferA);
 		return false;
 	}
-	memcpy(instancesData, instances, sizeof(instances));
+	VkTransformMatrixKHR identityMatrix = {
+		.matrix = {{ 1.0f, 0.0f, 0.0f, 0.0f },
+                   { 0.0f, 1.0f, 0.0f, 0.0f },
+                   { 0.0f, 0.0f, 1.0f, 0.0f }}
+	};
+	VkWriteTLASInstance(vk, instancesData, blas, 0, &identityMatrix, 0, 0xFF, 0, 0);
 	vmaUnmapMemory(vk->allocator, instancesBufferA);
 
 	VkBufferDeviceAddressInfo iAddressInfo = {

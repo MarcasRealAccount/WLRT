@@ -3,6 +3,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+void VkWriteTLASInstance(VkData* vk, void* buffer, VkAccStruct* accStruct, uint32_t index, const VkTransformMatrixKHR* transform, uint32_t customIndex, uint8_t mask, uint32_t sbtOffset, VkGeometryInstanceFlagsKHR flags)
+{
+	if (!vk || !buffer || !accStruct) return;
+
+	VkAccelerationStructureDeviceAddressInfoKHR asAddressInfo = {
+		.sType                 = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+		.pNext                 = NULL,
+		.accelerationStructure = accStruct->handle
+	};
+
+	VkAccelerationStructureInstanceKHR* instance = ((VkAccelerationStructureInstanceKHR*) buffer) + index;
+
+	instance->transform                              = *transform;
+	instance->instanceCustomIndex                    = customIndex;
+	instance->mask                                   = mask;
+	instance->instanceShaderBindingTableRecordOffset = sbtOffset;
+	instance->flags                                  = flags;
+	instance->accelerationStructureReference         = vkGetAccelerationStructureDeviceAddressKHR(vk->device, &asAddressInfo);
+}
+
 bool VkSetupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder)
 {
 	if (!vk || !builder) return false;

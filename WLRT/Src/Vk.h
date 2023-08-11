@@ -132,6 +132,8 @@ void VkCleanupFrames(VkData* vk);
 bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain);
 void VkCleanupSwapchain(VkData* vk, VkSwapchainData* swapchain);
 
+void VkWriteTLASInstance(VkData* vk, void* buffer, VkAccStruct* accStruct, uint32_t index, const VkTransformMatrixKHR* transform, uint32_t customIndex, uint8_t mask, uint32_t sbtOffset, VkGeometryInstanceFlagsKHR flags);
+
 bool VkSetupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder);
 void VkCleanupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder);
 void VkCleanupAccStruct(VkData* vk, VkAccStruct* accStruct);

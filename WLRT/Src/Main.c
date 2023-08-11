@@ -21,7 +21,7 @@ static void VKErrCB(int code, const char* msg)
 	printf("VK ERROR (%d %s): %s\n", code, VkGetErrorString(code), msg);
 }
 
-static bool CreateBLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* blas)
+static bool CreateBLAS(VkAccStructBuilder* builder, VkAccStruct* blas)
 {
 	typedef struct Vertex
 	{
@@ -29,6 +29,8 @@ static bool CreateBLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
 	} Vertex;
 
 	typedef uint32_t Index;
+
+	VkData* vk = builder->vk;
 
 	Vertex vertices[] = {
 		{0.5f,  0.2f, 0.0f, 0.0f},
@@ -136,8 +138,10 @@ static bool CreateBLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
 	return true;
 }
 
-static bool CreateTLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* blas, VkAccStruct* tlas)
+static bool CreateTLAS(VkAccStructBuilder* builder, VkAccStruct* blas, VkAccStruct* tlas)
 {
+	VkData* vk = builder->vk;
+
 	VkBuffer      instancesBuffer  = NULL;
 	VmaAllocation instancesBufferA = NULL;
 	void*         instancesData    = NULL;
@@ -193,20 +197,20 @@ static bool CreateTLAS(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* bla
 	return true;
 }
 
-static bool CreateAS(VkData* vk, VkAccStruct* blas, VkAccStruct* tlas)
+static bool CreateAS(VkAccStruct* blas, VkAccStruct* tlas)
 {
 	VkAccStructBuilder builder;
 	memset(&builder, 0, sizeof(builder));
-	builder.vk = vk;
+	builder.vk = blas->vk;
 	if (!VkSetupAccStructBuilder(&builder)) return false;
 
-	if (!CreateBLAS(vk, &builder, blas))
+	if (!CreateBLAS(&builder, blas))
 	{
 		VkCleanupAccStructBuilder(&builder);
 		return false;
 	}
 
-	if (!CreateTLAS(vk, &builder, blas, tlas))
+	if (!CreateTLAS(&builder, blas, tlas))
 	{
 		VkCleanupAccStruct(blas);
 		VkCleanupAccStructBuilder(&builder);
@@ -223,34 +227,48 @@ static void GLFWOnExit(void* data)
 	glfwTerminate();
 }
 
-static void VkDeviceWaitIdleOnExit(void* data)
+typedef struct AppData
 {
-	vkDeviceWaitIdle(((VkData*) data)->device);
-}
+	VkData*          vk;
+	WindowData*      window;
+	VkSwapchainData* vkSwapchain;
 
-static void VkOnExit(void* data)
-{
-	VkCleanup((VkData*) data);
-}
+	size_t       accStructCount;
+	VkAccStruct* accStructs;
 
-static void VkSwapchainOnExit(void* data)
-{
-	VkCleanupSwapchain((VkSwapchainData*) data);
-}
+	size_t        shaderCount;
+	VkShaderData* shaders;
 
-static void VkAccStructOnExit(void* data)
-{
-	VkCleanupAccStruct((VkAccStruct*) data);
-}
+	VkRayTracingPipelineData* rtPipeline;
+} AppData;
 
-static void VkRayTracingPipelineOnExit(void* data)
+static void AppOnExit(void* data)
 {
-	VkCleanupRayTracingPipeline((VkRayTracingPipelineData*) data);
-}
+	AppData* appData = (AppData*) data;
+	if (appData->vk)
+		vkDeviceWaitIdle(appData->vk->device);
 
-static void WindowOnExit(void* data)
-{
-	WLRTDestroyWindow((WindowData*) data);
+	VkCleanupRayTracingPipeline(appData->rtPipeline);
+	free(appData->rtPipeline);
+	if (appData->shaders)
+	{
+		for (size_t i = 0; i < appData->shaderCount; ++i)
+			VkCleanupShader(appData->shaders + i);
+		free(appData->shaders);
+	}
+	if (appData->accStructs)
+	{
+		for (size_t i = 0; i < appData->accStructCount; ++i)
+			VkCleanupAccStruct(appData->accStructs + i);
+		free(appData->accStructs);
+	}
+	VkCleanupSwapchain(appData->vkSwapchain);
+	free(appData->vkSwapchain);
+	WLRTDestroyWindow(appData->window);
+	free(appData->window);
+	VkCleanup(appData->vk);
+	free(appData->vk);
+	free(appData);
 }
 
 int main(int argc, char** argv)
@@ -263,57 +281,54 @@ int main(int argc, char** argv)
 	ExitAssert(glfwInit(), 1);
 	ExitRegister(&GLFWOnExit, NULL);
 
-	VkData* vk = (VkData*) malloc(sizeof(VkData));
-	ExitAssert(vk, 1);
-	memset(vk, 0, sizeof(VkData));
-	vk->framesInFlight = 2;
-	vk->errorCallback  = &VKErrCB;
-	ExitAssert(VkSetup(vk), 1);
-	ExitRegister(&VkOnExit, vk);
-	VkLoadFuncs(vk->instance, vk->device);
+	AppData* appData = (AppData*) calloc(1, sizeof(AppData));
+	ExitAssert(appData != NULL, 1);
+	ExitRegister(&AppOnExit, appData);
 
-	WindowData* window = (WindowData*) malloc(sizeof(WindowData));
-	ExitAssert(window, 1);
-	memset(window, 0, sizeof(WindowData));
-	window->handle = NULL;
-	window->x      = 1 << 31;
-	window->y      = 1 << 31;
-	window->width  = 1280;
-	window->height = 720;
+	appData->vk = (VkData*) calloc(1, sizeof(VkData));
+	ExitAssert(appData->vk != NULL, 1);
+	appData->vk->framesInFlight = 2;
+	appData->vk->errorCallback  = &VKErrCB;
+	ExitAssert(VkSetup(appData->vk), 1);
+	VkLoadFuncs(appData->vk->instance, appData->vk->device);
 
-	VkSwapchainData* vkSwapchain = (VkSwapchainData*) malloc(sizeof(VkSwapchainData));
-	ExitAssert(vkSwapchain, 1);
-	memset(vkSwapchain, 0, sizeof(VkSwapchainData));
-	vkSwapchain->vk     = vk;
-	vkSwapchain->window = window;
-	ExitAssert(WLRTCreateWindow(window), 1);
-	ExitRegister(&WindowOnExit, window);
-	ExitAssert(VkSetupSwapchain(vkSwapchain), 1);
-	ExitRegister(&VkSwapchainOnExit, vkSwapchain);
+	appData->window = (WindowData*) calloc(1, sizeof(WindowData));
+	ExitAssert(appData->window != NULL, 1);
+	appData->window->x      = 1 << 31;
+	appData->window->y      = 1 << 31;
+	appData->window->width  = 1280;
+	appData->window->height = 720;
+	ExitAssert(WLRTCreateWindow(appData->window), 1);
 
-	VkAccStruct* bothLass = (VkAccStruct*) malloc(2 * sizeof(VkAccStruct));
-	ExitAssert(bothLass, 1);
-	memset(bothLass, 0, 2 * sizeof(VkAccStruct));
-	bothLass[0].vk = vk;
-	bothLass[1].vk = vk;
-	ExitAssert(CreateAS(vk, bothLass, bothLass + 1), 1);
-	ExitRegister(&VkAccStructOnExit, bothLass);
-	ExitRegister(&VkAccStructOnExit, bothLass + 1);
+	appData->vkSwapchain = (VkSwapchainData*) calloc(1, sizeof(VkSwapchainData));
+	ExitAssert(appData->vkSwapchain != NULL, 1);
+	appData->vkSwapchain->vk     = appData->vk;
+	appData->vkSwapchain->window = appData->window;
+	ExitAssert(VkSetupSwapchain(appData->vkSwapchain), 1);
 
-	VkRayTracingPipelineData* rtPipeline = (VkRayTracingPipelineData*) malloc(sizeof(VkRayTracingPipelineData));
-	ExitAssert(rtPipeline, 1);
-	memset(rtPipeline, 0, sizeof(VkRayTracingPipelineData));
-	rtPipeline->vk = vk;
-	ExitAssert(VkSetupRayTracingPipeline(rtPipeline), 1);
-	ExitRegister(&VkRayTracingPipelineOnExit, rtPipeline);
+	appData->accStructCount = 2;
+	appData->accStructs     = (VkAccStruct*) calloc(2, sizeof(VkAccStruct));
+	ExitAssert(appData->accStructs != NULL, 1);
+	appData->accStructs[0].vk = appData->vk;
+	appData->accStructs[1].vk = appData->vk;
+	ExitAssert(CreateAS(appData->accStructs + 0, appData->accStructs + 1), 1);
 
-	WLRTMakeWindowVisible(window);
+	appData->shaderCount = 2;
+	appData->shaders     = (VkShaderData*) calloc(2, sizeof(VkShaderData));
+	ExitAssert(appData->shaders != NULL, 1);
+	appData->shaders[0].vk = appData->vk;
+	appData->shaders[1].vk = appData->vk;
 
-	ExitRegister(&VkDeviceWaitIdleOnExit, vk);
+	appData->rtPipeline = (VkRayTracingPipelineData*) calloc(1, sizeof(VkRayTracingPipelineData));
+	ExitAssert(appData->rtPipeline != NULL, 1);
+	appData->rtPipeline->vk = appData->vk;
+	ExitAssert(VkSetupRayTracingPipeline(appData->rtPipeline), 1);
+
+	WLRTMakeWindowVisible(appData->window);
 
 	double lastFrameTime = glfwGetTime();
 	double timer         = 0.0;
-	while (!window->wantsClose)
+	while (!appData->window->wantsClose)
 	{
 		double frameTime = glfwGetTime();
 		double deltaTime = frameTime - lastFrameTime;
@@ -326,10 +341,10 @@ int main(int argc, char** argv)
 
 		WLRTWindowPollEvents();
 
-		VkSwapchainData* swapchains[] = { vkSwapchain };
-		ExitAssert(VkBeginFrame(vk, swapchains, sizeof(swapchains) / sizeof(*swapchains)), 2);
+		VkSwapchainData* swapchains[] = { appData->vkSwapchain };
+		ExitAssert(VkBeginFrame(appData->vk, swapchains, sizeof(swapchains) / sizeof(*swapchains)), 2);
 
-		VkFrameData* frame = VkGetCurrentFrame(vk);
+		VkFrameData* frame = VkGetCurrentFrame(appData->vk);
 
 		for (uint32_t i = 0; i < sizeof(swapchains) / sizeof(*swapchains); ++i)
 		{
@@ -365,7 +380,7 @@ int main(int argc, char** argv)
 			vkCmdEndRendering(frame->buffer);
 		}
 
-		ExitAssert(VkEndFrame(vk), 2);
+		ExitAssert(VkEndFrame(appData->vk), 2);
 	}
 
 	return 0;

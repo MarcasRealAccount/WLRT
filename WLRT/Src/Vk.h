@@ -113,6 +113,18 @@ typedef struct VkAccStruct
 	VmaAllocation              allocation;
 } VkAccStruct;
 
+typedef struct VkShaderData
+{
+	VkData* vk;
+
+	VkShaderModule handle;
+
+	size_t filepathLength;
+	char*  filepath;
+
+	bool modified;
+} VkShaderData;
+
 typedef struct VkRayTracingPipelineData
 {
 	VkData* vk;
@@ -155,6 +167,9 @@ bool VkAccStructBuilderSetTriangles(VkAccStructBuilder* builder, uint32_t geomet
 bool VkAccStructBuilderPrepare(VkAccStructBuilder* builder, VkAccelerationStructureTypeKHR type, VkBuildAccelerationStructureFlagsKHR flags, uint32_t geometryCount, uint32_t firstGeometry);
 bool VkAccStructBuilderBuild(VkAccStructBuilder* builder, VkAccStruct* accStruct);
 bool VkAccStructBuilderCompact(VkAccStructBuilder* builder, VkAccStruct* accStruct, VkAccStruct* compactAccStruct);
+
+bool VkSetupShader(VkShaderData* shader);
+void VkCleanupShader(VkShaderData* shader);
 
 bool VkSetupRayTracingPipeline(VkRayTracingPipelineData* rtPipeline);
 void VkCleanupRayTracingPipeline(VkRayTracingPipelineData* rtPipeline);

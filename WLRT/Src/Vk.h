@@ -13,7 +13,7 @@ typedef enum VkErrorCode
 	VK_ERROR_CODE_ALLOCATION_FAILURE  = -2,
 	VK_ERROR_CODE_NO_PHYSICAL_DEVICES = -3,
 	VK_ERROR_CODE_INVALID_FRAME       = -4
-};
+} VkErrorCode;
 
 typedef struct VkFrameData
 {
@@ -76,6 +76,37 @@ typedef struct VkSwapchainData
 	VkSemaphore* renderFinished;
 } VkSwapchainData;
 
+typedef struct VkAccStructBuilder
+{
+	VkQueryPool queryPool;
+
+	VkAccelerationStructureTypeKHR       type;
+	VkBuildAccelerationStructureFlagsKHR flags;
+
+	uint64_t buildSize;
+	uint64_t buildScratchSize;
+	uint64_t updateScratchSize;
+	bool     sizeInvalid;
+
+	size_t        scratchBufferCapacity;
+	VkBuffer      scratchBuffer;
+	VmaAllocation scratchBufferA;
+
+	uint32_t                                  firstGeometry;
+	uint32_t                                  geometryCount;
+	size_t                                    geometryCapacity;
+	VkAccelerationStructureGeometryKHR*       geometries;
+	uint32_t*                                 primitiveCounts;
+	VkAccelerationStructureBuildRangeInfoKHR* ranges;
+} VkAccStructBuilder;
+
+typedef struct VkAccStruct
+{
+	VkAccelerationStructureKHR handle;
+	VkBuffer                   buffer;
+	VmaAllocation              allocation;
+} VkAccStruct;
+
 const char* VkGetErrorString(int code);
 const char* VkGetResultString(VkResult result);
 
@@ -88,6 +119,7 @@ VkFrameData* VkGetCurrentFrame(VkData* vk);
 
 bool VkBeginCmdBuffer(VkData* vk, VkCommandBuffer* buffer);
 bool VkEndCmdBuffer(VkData* vk);
+bool VkEndCmdBufferWait(VkData* vk);
 
 bool VkBeginFrame(VkData* vk, VkSwapchainData** swapchains, uint32_t swapchainCount);
 bool VkEndFrame(VkData* vk);
@@ -99,3 +131,12 @@ void VkCleanupFrames(VkData* vk);
 
 bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain);
 void VkCleanupSwapchain(VkData* vk, VkSwapchainData* swapchain);
+
+bool VkSetupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder);
+void VkCleanupAccStructBuilder(VkData* vk, VkAccStructBuilder* builder);
+void VkCleanupAccStruct(VkData* vk, VkAccStruct* accStruct);
+bool VkAccStructBuilderSetInstances(VkData* vk, VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress deviceAddress, uint32_t count);
+bool VkAccStructBuilderSetTriangles(VkData* vk, VkAccStructBuilder* builder, uint32_t geometryIndex, VkDeviceAddress vertexAddress, VkFormat vertexFormat, uint32_t vertexStride, uint32_t maxVertex, VkDeviceAddress indexAddress, VkIndexType indexType, uint32_t triangleCount);
+bool VkAccStructBuilderPrepare(VkData* vk, VkAccStructBuilder* builder, VkAccelerationStructureTypeKHR type, VkBuildAccelerationStructureFlagsKHR flags, uint32_t geometryCount, uint32_t firstGeometry);
+bool VkAccStructBuilderBuild(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* accStruct);
+bool VkAccStructBuilderCompact(VkData* vk, VkAccStructBuilder* builder, VkAccStruct* accStruct, VkAccStruct* compactAccStruct);

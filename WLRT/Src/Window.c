@@ -29,15 +29,13 @@ static void GLFWWinCloseCB(GLFWwindow* window)
 
 bool WLRTCreateWindow(WindowData* wd)
 {
-	if (wd->handle != NULL)
-		return false;
+	if (!wd || wd->handle != NULL) return false;
 
 	glfwDefaultWindowHints();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 	wd->handle = glfwCreateWindow(wd->width, wd->height, "WLRT", NULL, NULL);
-	if (!wd->handle)
-		return false;
+	if (!wd->handle) return false;
 	glfwSetWindowUserPointer(wd->handle, wd);
 	glfwSetWindowPosCallback(wd->handle, &GLFWWinPosCB);
 	glfwSetWindowSizeCallback(wd->handle, &GLFWWinSizeCB);
@@ -58,14 +56,14 @@ bool WLRTCreateWindow(WindowData* wd)
 
 void WLRTDestroyWindow(WindowData* wd)
 {
+	if (!wd) return;
 	if (wd->handle)
 		glfwDestroyWindow(wd->handle);
 }
 
 void WLRTMakeWindowVisible(WindowData* wd)
 {
-	if (!wd->handle)
-		return;
+	if (!wd || !wd->handle) return;
 
 	glfwShowWindow(wd->handle);
 }
@@ -140,8 +138,7 @@ static VkPresentModeKHR VkSelectPresentMode(VkData* vk, VkSwapchainData* swapcha
 
 bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 {
-	if (!vk || !swapchain || !swapchain->window)
-		return false;
+	if (!vk || !swapchain || !swapchain->window) return false;
 
 	if (!swapchain->surface)
 	{
@@ -275,6 +272,8 @@ bool VkSetupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 
 void VkCleanupSwapchain(VkData* vk, VkSwapchainData* swapchain)
 {
+	if (!vk || !swapchain) return;
+
 	for (uint32_t i = 0; i < swapchain->imageCount; ++i)
 	{
 		if (swapchain->views) vkDestroyImageView(vk->device, swapchain->views[i], vk->allocation);

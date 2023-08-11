@@ -114,7 +114,7 @@ bool VkValidateAllowed(VkData* vk, VkResult result, VkResult* allowed, uint32_t 
 
 VkFrameData* VkGetFrame(VkData* vk, uint32_t frame)
 {
-	if (frame >= vk->framesCapacity) return NULL;
+	if (!vk || frame >= vk->framesCapacity) return NULL;
 	return vk->frames + frame;
 }
 
@@ -125,6 +125,7 @@ VkFrameData* VkGetCurrentFrame(VkData* vk)
 
 bool VkBeginCmdBuffer(VkData* vk, VkCommandBuffer* buffer)
 {
+	if (!vk || !buffer) return false;
 	if (vk->inFrame)
 	{
 		*buffer = VkGetCurrentFrame(vk)->buffer;
@@ -152,13 +153,14 @@ bool VkBeginCmdBuffer(VkData* vk, VkCommandBuffer* buffer)
 		.pInheritanceInfo = NULL
 	};
 	if (!VkValidate(vk, vkBeginCommandBuffer(frame->buffer, &beginInfo))) return false;
+	*buffer = frame->buffer;
 	return true;
 }
 
 bool VkEndCmdBuffer(VkData* vk)
 {
-	if (vk->inFrame)
-		return true;
+	if (!vk) return false;
+	if (vk->inFrame) return true;
 
 	VkFrameData* frame = VkGetCurrentFrame(vk);
 
@@ -192,8 +194,16 @@ bool VkEndCmdBuffer(VkData* vk)
 	return true;
 }
 
+bool VkEndCmdBufferWait(VkData* vk)
+{
+	if (!VkEndCmdBuffer(vk)) return false;
+	vkQueueWaitIdle(vk->queue);
+	return true;
+}
+
 static void VkCleanupFrame(VkData* vk, VkFrameData* frame)
 {
+	(void) vk;
 	free(frame->swapchainDatas);
 	free(frame->swapchains);
 	free(frame->imageIndices);
@@ -214,7 +224,7 @@ static void VkCleanupFrame(VkData* vk, VkFrameData* frame)
 
 bool VkBeginFrame(VkData* vk, VkSwapchainData** swapchains, uint32_t swapchainCount)
 {
-	if (!VkSetupFrames(vk)) return false;
+	if (!vk || !swapchains || swapchainCount == 0 || !VkSetupFrames(vk)) return false;
 
 	VkFrameData* frame = VkGetCurrentFrame(vk);
 	if (!frame)
@@ -378,6 +388,8 @@ bool VkBeginFrame(VkData* vk, VkSwapchainData** swapchains, uint32_t swapchainCo
 
 bool VkEndFrame(VkData* vk)
 {
+	if (!vk) return false;
+
 	VkFrameData* frame = VkGetCurrentFrame(vk);
 	if (!frame)
 	{
@@ -571,9 +583,10 @@ static bool VkSetupDevice(VkData* vk)
 		.dynamicRendering = VK_TRUE
 	};
 	VkPhysicalDeviceVulkan12Features features12 = {
-		.sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-		.pNext             = &features13,
-		.timelineSemaphore = VK_TRUE
+		.sType               = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+		.pNext               = &features13,
+		.timelineSemaphore   = VK_TRUE,
+		.bufferDeviceAddress = VK_TRUE
 	};
 	VkPhysicalDeviceVulkan11Features features11 = {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -613,7 +626,7 @@ static bool VkSetupDevice(VkData* vk)
 static bool VkSetupVMA(VkData* vk)
 {
 	VmaAllocatorCreateInfo createInfo = {
-		.flags                       = 0,
+		.flags                       = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
 		.physicalDevice              = vk->physicalDevice,
 		.device                      = vk->device,
 		.preferredLargeHeapBlockSize = 0,
@@ -630,6 +643,8 @@ static bool VkSetupVMA(VkData* vk)
 
 bool VkSetup(VkData* vk)
 {
+	if (!vk) return false;
+
 	if (!VkSetupInstance(vk) ||
 		!VkSelectPhysicalDevice(vk) ||
 		!VkSetupDevice(vk) ||
@@ -645,6 +660,8 @@ bool VkSetup(VkData* vk)
 
 void VkCleanup(VkData* vk)
 {
+	if (!vk) return;
+
 	VkCleanupFrames(vk);
 	vmaDestroyAllocator(vk->allocator);
 	vkDestroyDevice(vk->device, vk->allocation);
@@ -658,6 +675,8 @@ void VkCleanup(VkData* vk)
 
 bool VkSetupFrames(VkData* vk)
 {
+	if (!vk) return false;
+
 	if (vk->framesInFlight == vk->framesCapacity)
 		return true;
 
@@ -731,6 +750,8 @@ bool VkSetupFrames(VkData* vk)
 
 void VkCleanupFrames(VkData* vk)
 {
+	if (!vk) return;
+
 	if (vk->frames)
 	{
 		do {

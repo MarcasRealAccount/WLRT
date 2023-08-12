@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Filesystem.h"
+
 #include <stdbool.h>
 
 #include <vma/vk_mem_alloc.h>
@@ -119,8 +121,8 @@ typedef struct VkShaderData
 
 	VkShaderModule handle;
 
-	size_t filepathLength;
-	char*  filepath;
+	FSPath   filepath;
+	uint64_t watchID;
 
 	bool modified;
 } VkShaderData;
@@ -168,8 +170,9 @@ bool VkAccStructBuilderPrepare(VkAccStructBuilder* builder, VkAccelerationStruct
 bool VkAccStructBuilderBuild(VkAccStructBuilder* builder, VkAccStruct* accStruct);
 bool VkAccStructBuilderCompact(VkAccStructBuilder* builder, VkAccStruct* accStruct, VkAccStruct* compactAccStruct);
 
-bool VkSetupShader(VkShaderData* shader);
+bool VkSetupShader(VkShaderData* shader, const char* filepath);
 void VkCleanupShader(VkShaderData* shader);
+bool VkShaderRecompile(VkShaderData* shader);
 
 bool VkSetupRayTracingPipeline(VkRayTracingPipelineData* rtPipeline);
 void VkCleanupRayTracingPipeline(VkRayTracingPipelineData* rtPipeline);

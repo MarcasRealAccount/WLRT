@@ -1,4 +1,5 @@
 #include "Exit.h"
+#include "FileWatcher.h"
 #include "Vk.h"
 #include "VkFuncs/VkFuncs.h"
 #include "Window.h"
@@ -227,6 +228,12 @@ static void GLFWOnExit(void* data)
 	glfwTerminate();
 }
 
+static void FWOnExit(void* data)
+{
+	(void) data;
+	FWCleanup();
+}
+
 typedef struct AppData
 {
 	VkData*          vk;
@@ -276,6 +283,8 @@ int main(int argc, char** argv)
 	(void) argc;
 	(void) argv;
 	ExitAssert(ExitSetup(), 1);
+	ExitAssert(FWSetup(), 1);
+	ExitRegister(&FWOnExit, NULL);
 
 	glfwSetErrorCallback(&GLFWErrCB);
 	ExitAssert(glfwInit(), 1);
@@ -313,11 +322,11 @@ int main(int argc, char** argv)
 	appData->accStructs[1].vk = appData->vk;
 	ExitAssert(CreateAS(appData->accStructs + 0, appData->accStructs + 1), 1);
 
-	appData->shaderCount = 2;
-	appData->shaders     = (VkShaderData*) calloc(2, sizeof(VkShaderData));
+	appData->shaderCount = 1;
+	appData->shaders     = (VkShaderData*) calloc(1, sizeof(VkShaderData));
 	ExitAssert(appData->shaders != NULL, 1);
-	appData->shaders[0].vk = appData->vk;
-	appData->shaders[1].vk = appData->vk;
+	appData->shaders->vk = appData->vk;
+	ExitAssert(VkSetupShader(appData->shaders + 0, "Shaders/shader.rgen"), 1);
 
 	appData->rtPipeline = (VkRayTracingPipelineData*) calloc(1, sizeof(VkRayTracingPipelineData));
 	ExitAssert(appData->rtPipeline != NULL, 1);
@@ -340,6 +349,14 @@ int main(int argc, char** argv)
 		}
 
 		WLRTWindowPollEvents();
+		FWUpdate();
+
+		for (size_t i = 0; i < appData->shaderCount; ++i)
+		{
+			VkShaderData* shader = appData->shaders + i;
+			if (shader->modified)
+				VkShaderRecompile(shader);
+		}
 
 		VkSwapchainData* swapchains[] = { appData->vkSwapchain };
 		ExitAssert(VkBeginFrame(appData->vk, swapchains, sizeof(swapchains) / sizeof(*swapchains)), 2);

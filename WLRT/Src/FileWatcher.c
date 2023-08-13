@@ -1,250 +1,191 @@
 #include "FileWatcher.h"
+#include "DynArray.h"
+#include "Threading.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 #include <Windows.h>
 
-static FileWatcherData* s_FileWatcher;
-
-bool FWSetup()
+typedef struct WLRTFileWatcherWatchData
 {
-	s_FileWatcher = (FileWatcherData*) malloc(sizeof(FileWatcherData));
-	if (!s_FileWatcher)
-		return false;
-	s_FileWatcher->watchLen = 0;
-	s_FileWatcher->watchCap = 32;
-	s_FileWatcher->watches  = (FileWatcherWatchData*) malloc(32 * sizeof(FileWatcherWatchData));
-	if (!s_FileWatcher->watches)
-	{
-		FWCleanup();
-		return false;
-	}
+	uint64_t                  id;
+	WLRTPath                  file;
+	WLRTFileWatcherCallbackFn callback;
+	void*                     userData;
+} WLRTFileWatcherWatchData;
 
-	s_FileWatcher->cachedDirectoryLen = 0;
-	s_FileWatcher->cachedDirectoryCap = 32;
-	s_FileWatcher->cachedDirectories  = (FSPath*) malloc(32 * sizeof(FSPath));
-	if (!s_FileWatcher->cachedDirectories)
-	{
-		FWCleanup();
-		return false;
-	}
-	memset(s_FileWatcher->watches, 0, s_FileWatcher->watchCap * sizeof(FileWatcherWatchData));
-	memset(s_FileWatcher->cachedDirectories, 0, s_FileWatcher->cachedDirectoryCap * sizeof(FSPath));
-	s_FileWatcher->curId = 0;
-	return true;
+typedef struct WLRTFileWatcherDirectoryData
+{
+	WLRTPath directory;
+	uint64_t count;
+	HANDLE   handle;
+} WLRTFileWatcherDirectoryData;
+
+typedef struct WLRTFileWatcherData
+{
+	uint64_t curId;
+
+	WLRTDynArray watches;
+	WLRTDynArray newDirectories;
+	WLRTDynArray cachedDirectories;
+
+	WLRTThreadData watcherThread;
+
+	OVERLAPPED overlapped;
+	size_t     bufferCap;
+	void*      buffer;
+} WLRTFileWatcherData;
+
+static WLRTFileWatcherData s_FileWatcher;
+
+static void WLRTFileWatcherDirChangeNotify(DWORD dwErrorCode, DWORD dwNumberOfBytesTransferred, LPOVERLAPPED lpOverlapped)
+{
 }
 
-void FWCleanup()
+static int WLRTFileWatcherFunc(void* userData)
 {
-	if (!s_FileWatcher)
-		return;
+	(void) userData;
 
-	for (size_t i = 0; i < s_FileWatcher->watchLen; ++i)
-		FSDestroyPath(&s_FileWatcher->watches[i].file);
-	free(s_FileWatcher->watches);
-	for (size_t i = 0; i < s_FileWatcher->cachedDirectoryLen; ++i)
-		FSDestroyPath(s_FileWatcher->cachedDirectories + i);
-	free(s_FileWatcher->cachedDirectories);
-	free(s_FileWatcher);
-	s_FileWatcher = NULL;
-}
 
-void FWUpdate()
-{
-	if (!s_FileWatcher)
-		return;
-
-	uint8_t* buffer = (uint8_t*) malloc(32768 * sizeof(uint8_t));
-	if (!buffer)
-		return;
-
-	FSPath tempPath = {
-		.buf = (char*) malloc(32768 * sizeof(char)),
-		.cap = 32768,
-		.len = 0
-	};
-	for (size_t i = 0; i < s_FileWatcher->cachedDirectoryLen; ++i)
+	for (size_t i = 0; i < s_FileWatcher.cachedDirectories.size; ++i)
 	{
-		FSPath* path    = s_FileWatcher->cachedDirectories + i;
-		HANDLE  dHandle = CreateFileA(path->buf, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-		DWORD   written = 0;
-		bool    res     = ReadDirectoryChangesW(dHandle, buffer, 32768 * sizeof(uint8_t), false, FILE_NOTIFY_CHANGE_LAST_WRITE, &written, NULL, NULL);
-		CloseHandle(dHandle);
-		if (!res)
+		WLRTFileWatcherDirectoryData* directory = ((WLRTFileWatcherDirectoryData*) s_FileWatcher.cachedDirectories.data) + i;
+		if (directory->count == 0)
+		{
+			WLRTDynArrayErase(&s_FileWatcher.cachedDirectories, i);
+			--i;
+			directory = ((WLRTFileWatcherDirectoryData*) s_FileWatcher.cachedDirectories.data) + i;
+			CloseHandle(directory->handle);
+		}
+		if (!directory->handle)
+		{
+			directory->handle = CreateFileA(directory->directory.path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, NULL);
+		}
+		if (!directory->handle)
 			continue;
 
-		size_t                   offset = 0;
-		FILE_NOTIFY_INFORMATION* info;
-		do {
-			info = (FILE_NOTIFY_INFORMATION*) (buffer + offset);
-			switch (info->Action)
-			{
-			case FILE_ACTION_MODIFIED:
-			{
-				tempPath.len = wcstombs(tempPath.buf, info->FileName, tempPath.cap);
-				for (size_t j = 0; j < s_FileWatcher->watchLen; ++j)
-				{
-					FileWatcherWatchData* watch = s_FileWatcher->watches + j;
-					if (FSPathEquals(&tempPath, &watch->file))
-						watch->callback(&watch->file, watch->userData);
-				}
-				break;
-			}
-			}
-			offset += info->NextEntryOffset;
-		}
-		while (info->NextEntryOffset);
+		ReadDirectoryChangesW(directory->handle, s_FileWatcher.buffer, s_FileWatcher.bufferCap, FALSE, FILE_NOTIFY_CHANGE_LAST_WRITE, NULL, &s_FileWatcher.overlapped, &WLRTFileWatcherDirChangeNotify);
 	}
-	FSDestroyPath(&tempPath);
-	free(buffer);
+	return 0;
 }
 
-static bool FWEnsureWatchCap(size_t requiredSize)
+bool WLRTFileWatcherSetup()
 {
-	if (!s_FileWatcher)
+	memset(&s_FileWatcher.overlapped, 0, sizeof(OVERLAPPED));
+	s_FileWatcher.curId                  = 0;
+	s_FileWatcher.watcherThread.callback = &WLRTFileWatcherFunc;
+	s_FileWatcher.watcherThread.userData = NULL;
+	if (!WLRTDynArraySetup(&s_FileWatcher.watches, 32, sizeof(WLRTFileWatcherWatchData)) ||
+		!WLRTDynArraySetup(&s_FileWatcher.newDirectories, 32, sizeof(WLRTFileWatcherDirectoryData)) ||
+		!WLRTDynArraySetup(&s_FileWatcher.cachedDirectories, 32, sizeof(WLRTFileWatcherDirectoryData)) ||
+		!WLRTThreadSetup(&s_FileWatcher.watcherThread))
+	{
+		WLRTFileWatcherCleanup();
 		return false;
-
-	if (requiredSize <= s_FileWatcher->watchCap)
-		return true;
-
-	size_t newCapacity = requiredSize;
-	newCapacity       |= newCapacity >> 1;
-	newCapacity       |= newCapacity >> 2;
-	newCapacity       |= newCapacity >> 4;
-	newCapacity       |= newCapacity >> 8;
-	newCapacity       |= newCapacity >> 16;
-	newCapacity       |= newCapacity >> 32;
-	++newCapacity;
-
-	FileWatcherWatchData* newWatches = (FileWatcherWatchData*) malloc(newCapacity * sizeof(FileWatcherWatchData));
-	if (!newWatches)
+	}
+	s_FileWatcher.bufferCap = 32768;
+	s_FileWatcher.buffer    = malloc(s_FileWatcher.bufferCap);
+	if (!s_FileWatcher.buffer)
+	{
+		WLRTFileWatcherCleanup();
 		return false;
-	memcpy(newWatches, s_FileWatcher->watches, s_FileWatcher->watchCap);
-	memset(newWatches + s_FileWatcher->watchCap, 0, (newCapacity - s_FileWatcher->watchCap) * sizeof(FileWatcherWatchData));
-	free(s_FileWatcher->watches);
-	s_FileWatcher->watchCap = newCapacity;
-	s_FileWatcher->watches  = newWatches;
+	}
+	WLRTThreadSetName(&s_FileWatcher.watcherThread, "FileWatcher", ~0ULL);
 	return true;
 }
 
-static bool FWEnsureCachedDirectoryCap(size_t requiredSize)
+void WLRTFileWatcherCleanup()
 {
-	if (!s_FileWatcher)
-		return false;
-
-	if (requiredSize <= s_FileWatcher->cachedDirectoryCap)
-		return true;
-
-	size_t newCapacity = requiredSize;
-	newCapacity       |= newCapacity >> 1;
-	newCapacity       |= newCapacity >> 2;
-	newCapacity       |= newCapacity >> 4;
-	newCapacity       |= newCapacity >> 8;
-	newCapacity       |= newCapacity >> 16;
-	newCapacity       |= newCapacity >> 32;
-	++newCapacity;
-
-	FSPath* newCachedDirectories = (FSPath*) malloc(newCapacity * sizeof(FSPath));
-	if (!newCachedDirectories)
-		return false;
-	memcpy(newCachedDirectories, s_FileWatcher->cachedDirectories, s_FileWatcher->cachedDirectoryCap);
-	memset(newCachedDirectories + s_FileWatcher->cachedDirectoryCap, 0, (newCapacity - s_FileWatcher->cachedDirectoryCap) * sizeof(FSPath));
-	free(s_FileWatcher->cachedDirectories);
-	s_FileWatcher->cachedDirectoryCap = newCapacity;
-	s_FileWatcher->cachedDirectories  = newCachedDirectories;
-	return true;
+	s_FileWatcher.curId = 0;
+	WLRTDynArrayCleanup(&s_FileWatcher.watches);
+	WLRTDynArrayCleanup(&s_FileWatcher.newDirectories);
+	WLRTDynArrayCleanup(&s_FileWatcher.cachedDirectories);
+	WLRTThreadCleanup(&s_FileWatcher.watcherThread);
+	free(s_FileWatcher.buffer);
+	s_FileWatcher.bufferCap = 0;
+	s_FileWatcher.buffer    = NULL;
 }
 
-uint64_t FWWatchFile(const FSPath* file, FileWatcherCallbackFn callback, void* userData)
+uint64_t WLRTFileWatcherWatchFile(const WLRTPath* file, WLRTFileWatcherCallbackFn callback, void* userData)
 {
-	if (!s_FileWatcher ||
-		!FWEnsureWatchCap(s_FileWatcher->watchLen + 1))
+	if (!file || !callback)
 		return 0;
 
-	FileWatcherWatchData* watch = s_FileWatcher->watches + s_FileWatcher->watchLen;
-	++s_FileWatcher->watchLen;
-	watch->id       = ++s_FileWatcher->curId;
-	watch->file     = FSCreatePath(file->buf, file->len);
-	watch->callback = callback;
-	watch->userData = userData;
+	WLRTFileWatcherWatchData watch = {
+		.id       = s_FileWatcher.curId + 1,
+		.file     = WLRTPathCopy(file),
+		.callback = callback,
+		.userData = userData
+	};
+	if (!WLRTDynArrayPushBack(&s_FileWatcher.watches, &watch))
+		return 0;
+	++s_FileWatcher.curId;
 
-	FSPath stem  = FSPathGetStem(file);
-	bool   found = false;
-	for (size_t i = 0; i < s_FileWatcher->cachedDirectoryLen; ++i)
+	WLRTPath dir   = WLRTPathGetDirectory(&((WLRTFileWatcherWatchData*) s_FileWatcher.watches.data)[s_FileWatcher.watches.size - 1].file);
+	bool     found = false;
+	for (size_t i = 0; !found && i < s_FileWatcher.newDirectories.size; ++i)
 	{
-		FSPath* path = s_FileWatcher->cachedDirectories + i;
-		if (FSPathEquals(&stem, path))
+		WLRTFileWatcherDirectoryData* directory = ((WLRTFileWatcherDirectoryData*) s_FileWatcher.newDirectories.data) + i;
+		if (WLRTPathCompare(&dir, &directory->directory) == 0)
 		{
+			++directory->count;
 			found = true;
-			break;
+		}
+	}
+	for (size_t i = 0; !found && i < s_FileWatcher.cachedDirectories.size; ++i)
+	{
+		WLRTFileWatcherDirectoryData* directory = ((WLRTFileWatcherDirectoryData*) s_FileWatcher.cachedDirectories.data) + i;
+		if (WLRTPathCompare(&dir, &directory->directory) == 0)
+		{
+			++directory->count;
+			found = true;
 		}
 	}
 	if (!found)
 	{
-		do {
-			if (!FWEnsureCachedDirectoryCap(s_FileWatcher->cachedDirectoryLen + 1))
-				break;
-
-			FSPath* path = s_FileWatcher->cachedDirectories + s_FileWatcher->cachedDirectoryLen;
-			++s_FileWatcher->cachedDirectoryLen;
-			*path = FSCreatePath(stem.buf, stem.len);
-		}
-		while (false);
+		WLRTFileWatcherDirectoryData directory = {
+			.directory = dir,
+			.count     = 1
+		};
+		WLRTDynArrayPushBack(&s_FileWatcher.newDirectories, &directory);
 	}
-	FSDestroyPath(&stem);
-	return watch->id;
+	return watch.id;
 }
 
-void FWUnwatchFile(uint64_t id)
+void WLRTFileWatcherUnwatchFile(uint64_t id)
 {
-	if (!s_FileWatcher)
+	if (id == 0)
 		return;
 
 	size_t i = 0;
-	for (; i < s_FileWatcher->watchLen; ++i)
+	for (; i < s_FileWatcher.watches.size; ++i)
 	{
-		FileWatcherWatchData* watch = s_FileWatcher->watches + i;
+		WLRTFileWatcherWatchData* watch = ((WLRTFileWatcherWatchData*) s_FileWatcher.watches.data) + i;
 		if (watch->id == id)
 			break;
 	}
-	if (i >= s_FileWatcher->watchLen)
+	if (i >= s_FileWatcher.watches.size)
 		return;
-	FileWatcherWatchData* foundWatch = s_FileWatcher->watches + i;
 
-	FSPath stem = FSPathGetStem(&foundWatch->file);
-	FSDestroyPath(&foundWatch->file);
-	memmove(s_FileWatcher->watches + i - 1, s_FileWatcher->watches + i, (s_FileWatcher->watchLen - i) * sizeof(FileWatcherWatchData));
-	--s_FileWatcher->watchLen;
-	memset(s_FileWatcher->watches + s_FileWatcher->watchLen, 0, sizeof(FileWatcherWatchData));
-
-	bool found = false;
-	for (i = 0; i < s_FileWatcher->watchLen; ++i)
+	WLRTFileWatcherWatchData* watch = ((WLRTFileWatcherWatchData*) s_FileWatcher.watches.data) + i;
+	WLRTPath                  dir   = WLRTPathGetDirectory(&watch->file);
+	bool                      found = false;
+	for (size_t j = 0; j < !found && s_FileWatcher.newDirectories.size; ++j)
 	{
-		FileWatcherWatchData* watch = s_FileWatcher->watches + i;
-		if (watch == foundWatch)
-			continue;
-
-		FSPath stem2 = FSPathGetStem(&watch->file);
-		if (FSPathEquals(&stem, &stem2))
+		WLRTFileWatcherDirectoryData* directory = ((WLRTFileWatcherDirectoryData*) s_FileWatcher.newDirectories.data) + j;
+		if (WLRTPathCompare(&dir, &directory->directory) == 0)
 		{
-			FSDestroyPath(&stem2);
+			--directory->count == 0;
 			found = true;
-			break;
 		}
-		FSDestroyPath(&stem2);
 	}
-	if (!found)
+	for (size_t j = 0; j < !found && s_FileWatcher.cachedDirectories.size; ++j)
 	{
-		i = 0;
-		for (; i < s_FileWatcher->cachedDirectoryLen; ++i)
+		WLRTFileWatcherDirectoryData* directory = ((WLRTFileWatcherDirectoryData*) s_FileWatcher.cachedDirectories.data) + j;
+		if (WLRTPathCompare(&dir, &directory->directory) == 0)
 		{
-			if (FSPathEquals(&stem, s_FileWatcher->cachedDirectories + i))
-				break;
+			--directory->count == 0;
+			found = true;
 		}
-		memmove(s_FileWatcher->cachedDirectories + i - 1, s_FileWatcher->cachedDirectories + i, (s_FileWatcher->cachedDirectoryLen - i) * sizeof(FSPath));
-		--s_FileWatcher->cachedDirectoryLen;
-		memset(s_FileWatcher->cachedDirectories + s_FileWatcher->cachedDirectoryLen, 0, sizeof(FSPath));
 	}
-	FSDestroyPath(&stem);
 }

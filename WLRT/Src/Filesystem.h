@@ -1,22 +1,16 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
 
-typedef struct FSPath
+typedef struct WLRTPath
 {
-	char*  buf;
-	size_t len;
-	size_t cap;
-} FSPath;
+	char*  path;
+	size_t length;
+	size_t capacity;
+} WLRTPath;
 
-FSPath FSCreatePath(const char* path, size_t length);
-void   FSDestroyPath(FSPath* path);
-bool   FSPathAppend(FSPath* lhs, const FSPath* rhs);
-FSPath FSPathGetStem(const FSPath* path);
-bool   FSPathEquals(const FSPath* lhs, const FSPath* rhs);
-
-uint64_t FSLastWriteTime(const FSPath* filepath);
-void     FSSetLastWriteTime(const FSPath* filepath, uint64_t time);
-bool     FSCreateDirectories(const FSPath* directory);
+bool     WLRTPathSetup(WLRTPath* path);
+void     WLRTPathCleanup(WLRTPath* path);
+WLRTPath WLRTPathCopy(const WLRTPath* path);
+WLRTPath WLRTPathGetDirectory(const WLRTPath* path);
+int      WLRTPathCompare(const WLRTPath* lhs, const WLRTPath* rhs);

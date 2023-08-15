@@ -49,8 +49,9 @@ static int WLRTFileWatcherFunc(void* userData)
 {
 	(void) userData;
 
-	WLRTPath tempPath;
-	WLRTPathSetup(&tempPath);
+	WLRTPath tempPath1, tempPath2;
+	WLRTPathSetup(&tempPath1);
+	WLRTPathSetup(&tempPath2);
 
 	size_t tempFilenameBufferCap = MAX_PATH * sizeof(wchar_t);
 	char*  tempFilenameBuffer    = malloc((tempFilenameBufferCap + 1) * sizeof(char));
@@ -94,7 +95,8 @@ static int WLRTFileWatcherFunc(void* userData)
 			if (res != WAIT_OBJECT_0)
 				continue;
 
-			WLRTPathAssign(&tempPath, &data->directory);
+			WLRTPathAssign(&tempPath1, &data->directory);
+			WLRTPathAssign(&tempPath2, &data->directory);
 
 			FILE_NOTIFY_INFORMATION*    pInfo = NULL;
 			WLRTFileWatcherCallbackData callbackData;
@@ -117,6 +119,11 @@ static int WLRTFileWatcherFunc(void* userData)
 				case FILE_ACTION_MODIFIED:
 					callbackData.action = WLRT_FILE_WATCHER_ACTION_MODIFY;
 					break;
+				case FILE_ACTION_RENAMED_OLD_NAME:
+					callbackData.action = WLRT_FILE_WATCHER_ACTION_RENAMED;
+					break;
+				case FILE_ACTION_RENAMED_NEW_NAME:
+					break;
 				default:
 					continue;
 				}
@@ -129,15 +136,32 @@ static int WLRTFileWatcherFunc(void* userData)
 					.length   = filenameLen,
 					.capacity = tempFilenameBufferCap
 				};
-				WLRTPathAppend(&tempPath, &filename);
-				callbackData.file = &tempPath;
+				if (pInfo->Action == FILE_ACTION_RENAMED_NEW_NAME)
+				{
+					WLRTPathAppend(&tempPath2, &filename);
+					callbackData.newFile = &tempPath2;
+				}
+				else
+				{
+					WLRTPathAppend(&tempPath1, &filename);
+					callbackData.file = &tempPath1;
+				}
+				if (pInfo->Action == FILE_ACTION_RENAMED_OLD_NAME)
+					continue;
 
 				WLRTMutexLock(&s_FileWatcher.mutex);
 				for (size_t j = 0; j < s_FileWatcher.watches.size; ++j)
 				{
 					WLRTFileWatcherWatchData* watch = (WLRTFileWatcherWatchData*) WLRTDynArrayGet(&s_FileWatcher.watches, j);
-					if (WLRTPathCompare(&tempPath, &watch->file) != 0)
+					if (callbackData.action == WLRT_FILE_WATCHER_ACTION_RENAMED)
+					{
+						if (WLRTPathCompare(&tempPath1, &watch->file) != 0 && WLRTPathCompare(&tempPath2, &watch->file) != 0)
+							continue;
+					}
+					else if (WLRTPathCompare(&tempPath1, &watch->file) != 0)
+					{
 						continue;
+					}
 					callbackData.userData = watch->userData;
 					callbackData.id       = watch->id;
 					watch->callback(&callbackData);
@@ -150,7 +174,9 @@ static int WLRTFileWatcherFunc(void* userData)
 
 		Sleep(250);
 	}
-	WLRTPathCleanup(&tempPath);
+
+	WLRTPathCleanup(&tempPath2);
+	WLRTPathCleanup(&tempPath1);
 
 	return 0;
 }

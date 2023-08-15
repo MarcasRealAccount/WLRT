@@ -27,4 +27,8 @@ workspace("WLRT")
 
 		pkgdeps({ "stb", "glfw", "vulkan-sdk:shaderc=true" })
 
+		filter("system:windows")
+			links({ "Synchronization.lib" })
+		filter({})
+
 		common:addActions()

@@ -101,3 +101,32 @@ const char* WLRTThreadGetName(WLRTThreadData* thread)
 		return NULL;
 	return thread->nameBuf ? thread->nameBuf : "Thread";
 }
+
+bool WLRTMutexSetup(WLRTMutex* mutex)
+{
+	mutex->inUse = 0;
+	return true;
+}
+
+void WLRTMutexCleanup(WLRTMutex* mutex)
+{
+	(void) mutex;
+}
+
+void WLRTMutexLock(WLRTMutex* mutex)
+{
+	uint32_t val;
+	while ((val = InterlockedCompareExchange((volatile LONG*) &mutex->inUse, 1, 0)) == 1)
+		WaitOnAddress(&mutex->inUse, &val, 4, INFINITE);
+}
+
+bool WLRTMutexTryLock(WLRTMutex* mutex)
+{
+	return InterlockedCompareExchange((volatile LONG*) &mutex->inUse, 1, 0) == 0;
+}
+
+void WLRTMutexUnlock(WLRTMutex* mutex)
+{
+	if (InterlockedExchange((volatile LONG*) &mutex->inUse, 0) == 1)
+		WakeByAddressSingle(&mutex->inUse);
+}

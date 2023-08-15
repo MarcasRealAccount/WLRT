@@ -1,9 +1,12 @@
 #include "Threading.h"
+#include "Build.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <Windows.h>
+#if BUILD_IS_SYSTEM_WINDOWS
+
+	#include <Windows.h>
 
 static DWORD WLRTThreadThunk(LPVOID data)
 {
@@ -130,3 +133,9 @@ void WLRTMutexUnlock(WLRTMutex* mutex)
 	if (InterlockedExchange((volatile LONG*) &mutex->inUse, 0) == 1)
 		WakeByAddressSingle(&mutex->inUse);
 }
+
+#else
+
+	#error Threading.c, System not supported
+
+#endif

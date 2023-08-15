@@ -1,10 +1,13 @@
 #include "Filesystem.h"
+#include "Build.h"
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <Windows.h>
+#if BUILD_IS_SYSTEM_WINDOWS
+
+	#include <Windows.h>
 
 WLRTPath WLRTPathExec()
 {
@@ -51,47 +54,6 @@ void WLRTPathSetCWD(const WLRTPath* path)
 	if (!path || !path->path)
 		return;
 	SetCurrentDirectoryA(path->path);
-}
-
-bool WLRTPathSetup(WLRTPath* path)
-{
-	path->path     = NULL;
-	path->length   = 0;
-	path->capacity = 0;
-	return true;
-}
-
-void WLRTPathCleanup(WLRTPath* path)
-{
-	free(path->path);
-	path->path     = NULL;
-	path->length   = 0;
-	path->capacity = 0;
-}
-
-static bool WLRTPathEnsureSize(WLRTPath* path, size_t size)
-{
-	if (size <= path->capacity)
-		return true;
-
-	size_t newCapacity = size;
-	newCapacity       |= newCapacity >> 1;
-	newCapacity       |= newCapacity >> 2;
-	newCapacity       |= newCapacity >> 4;
-	newCapacity       |= newCapacity >> 8;
-	newCapacity       |= newCapacity >> 16;
-	newCapacity       |= newCapacity >> 32;
-	++newCapacity;
-	char* newBuf = (char*) malloc(newCapacity);
-	if (!newBuf)
-		return false;
-
-	memcpy(newBuf, path->path, path->length);
-	newBuf[path->length] = '\0';
-	free(path->path);
-	path->capacity = newCapacity;
-	path->path     = newBuf;
-	return true;
 }
 
 static void WLRTPathResolve(WLRTPath* path)
@@ -200,6 +162,53 @@ static void WLRTPathResolve(WLRTPath* path)
 
 	if (path->length >= 4 && path->path[0] == '/' && path->path[1] == '/' && path->path[2] == '?' && path->path[3] == '/')
 		WLRTPathErase(path, 0, 4);
+}
+
+#else
+
+	#error FileSystem.c, System not supported
+
+#endif
+
+bool WLRTPathSetup(WLRTPath* path)
+{
+	path->path     = NULL;
+	path->length   = 0;
+	path->capacity = 0;
+	return true;
+}
+
+void WLRTPathCleanup(WLRTPath* path)
+{
+	free(path->path);
+	path->path     = NULL;
+	path->length   = 0;
+	path->capacity = 0;
+}
+
+static bool WLRTPathEnsureSize(WLRTPath* path, size_t size)
+{
+	if (size <= path->capacity)
+		return true;
+
+	size_t newCapacity = size;
+	newCapacity       |= newCapacity >> 1;
+	newCapacity       |= newCapacity >> 2;
+	newCapacity       |= newCapacity >> 4;
+	newCapacity       |= newCapacity >> 8;
+	newCapacity       |= newCapacity >> 16;
+	newCapacity       |= newCapacity >> 32;
+	++newCapacity;
+	char* newBuf = (char*) malloc(newCapacity);
+	if (!newBuf)
+		return false;
+
+	memcpy(newBuf, path->path, path->length);
+	newBuf[path->length] = '\0';
+	free(path->path);
+	path->capacity = newCapacity;
+	path->path     = newBuf;
+	return true;
 }
 
 bool WLRTPathAbsolute(WLRTPath* path)

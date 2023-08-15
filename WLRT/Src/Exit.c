@@ -1,4 +1,5 @@
 #include "Exit.h"
+#include "Build.h"
 #include "DynArray.h"
 
 #include <stdlib.h>
@@ -49,6 +50,10 @@ void WLRTExitAssert(bool statement, int code)
 {
 	if (statement)
 		return;
+
+#if BUILD_IS_SYSTEM_WINDOWS && BUILD_IS_CONFIG_DEBUG
+	__debugbreak();
+#endif
 
 	WLRTExitHandle();
 	exit(code);

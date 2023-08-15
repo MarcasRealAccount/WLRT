@@ -1,10 +1,13 @@
 #include "FileWatcher.h"
+#include "Build.h"
 #include "DynArray.h"
 #include "Threading.h"
 
 #include <stdlib.h>
 
-#include <Windows.h>
+#if BUILD_IS_SYSTEM_WINDOWS
+
+	#include <Windows.h>
 
 typedef struct WLRTFileWatcherWatchData
 {
@@ -336,3 +339,9 @@ void WLRTFileWatcherUnwatchFile(uint64_t id)
 	WLRTPathCleanup(&dir);
 	WLRTMutexUnlock(&s_FileWatcher.mutex);
 }
+
+#else
+
+	#error FileWatcher.c, System not supported
+
+#endif

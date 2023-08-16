@@ -29,6 +29,20 @@ void        WLRTThreadStart(WLRTThreadData* thread);
 void        WLRTThreadSetName(WLRTThreadData* thread, const char* name, size_t length);
 const char* WLRTThreadGetName(WLRTThreadData* thread);
 
+uint32_t WLRTAtomic32Read(volatile uint32_t* memory);
+uint32_t WLRTAtomic32CompareExchange(volatile uint32_t* memory, uint32_t expected, uint32_t value);
+uint32_t WLRTAtomic32Exchange(volatile uint32_t* memory, uint32_t value);
+uint32_t WLRTAtomic32Add(volatile uint32_t* memory, uint32_t value);
+uint32_t WLRTAtomic32Sub(volatile uint32_t* memory, uint32_t value);
+uint64_t WLRTAtomic64Read(volatile uint64_t* memory);
+uint64_t WLRTAtomic64CompareExchange(volatile uint64_t* memory, uint64_t expected, uint64_t value);
+uint64_t WLRTAtomic64Exchange(volatile uint64_t* memory, uint64_t value);
+uint64_t WLRTAtomic64Add(volatile uint64_t* memory, uint64_t value);
+uint64_t WLRTAtomic64Sub(volatile uint64_t* memory, uint64_t value);
+void     WLRTAtomicWait(volatile void* memory, const void* expected, size_t expectedSize);
+void     WLRTAtomicWakeOne(void* memory);
+void     WLRTAtomicWakeAll(void* memory);
+
 bool WLRTMutexSetup(WLRTMutex* mutex);
 void WLRTMutexCleanup(WLRTMutex* mutex);
 void WLRTMutexLock(WLRTMutex* mutex);

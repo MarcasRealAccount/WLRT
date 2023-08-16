@@ -110,33 +110,69 @@ const char* WLRTThreadGetName(WLRTThreadData* thread)
 	return thread->nameBuf ? thread->nameBuf : "Thread";
 }
 
-bool WLRTMutexSetup(WLRTMutex* mutex)
+uint32_t WLRTAtomic32Read(volatile uint32_t* memory)
 {
-	mutex->inUse = 0;
-	return true;
+	return *memory;
 }
 
-void WLRTMutexCleanup(WLRTMutex* mutex)
+uint32_t WLRTAtomic32CompareExchange(volatile uint32_t* memory, uint32_t expected, uint32_t value)
 {
-	(void) mutex;
+	return (uint32_t) InterlockedCompareExchange((volatile LONG*) memory, (LONG) value, (LONG) expected);
 }
 
-void WLRTMutexLock(WLRTMutex* mutex)
+uint32_t WLRTAtomic32Exchange(volatile uint32_t* memory, uint32_t value)
 {
-	uint32_t val;
-	while ((val = InterlockedCompareExchange((volatile LONG*) &mutex->inUse, 1, 0)) == 1)
-		WaitOnAddress(&mutex->inUse, &val, 4, INFINITE);
+	return (uint32_t) InterlockedExchange((volatile LONG*) memory, (LONG) value);
 }
 
-bool WLRTMutexTryLock(WLRTMutex* mutex)
+uint32_t WLRTAtomic32Add(volatile uint32_t* memory, uint32_t value)
 {
-	return InterlockedCompareExchange((volatile LONG*) &mutex->inUse, 1, 0) == 0;
+	return (uint32_t) InterlockedAdd((volatile LONG*) memory, (LONG) value);
 }
 
-void WLRTMutexUnlock(WLRTMutex* mutex)
+uint32_t WLRTAtomic32Sub(volatile uint32_t* memory, uint32_t value)
 {
-	if (InterlockedExchange((volatile LONG*) &mutex->inUse, 0) == 1)
-		WakeByAddressSingle(&mutex->inUse);
+	return WLRTAtomic32Add(memory, ~value + 1);
+}
+
+uint64_t WLRTAtomic64Read(volatile uint64_t* memory)
+{
+	return *memory;
+}
+
+uint64_t WLRTAtomic64CompareExchange(volatile uint64_t* memory, uint64_t expected, uint64_t value)
+{
+	return (uint64_t) InterlockedCompareExchange64((volatile LONG64*) memory, (LONG64) value, (LONG64) expected);
+}
+
+uint64_t WLRTAtomic64Exchange(volatile uint64_t* memory, uint64_t value)
+{
+	return (uint64_t) InterlockedExchange64((volatile LONG64*) memory, (LONG64) value);
+}
+
+uint64_t WLRTAtomic64Add(volatile uint64_t* memory, uint64_t value)
+{
+	return (uint64_t) InterlockedAdd64((volatile LONG64*) memory, (LONG64) value);
+}
+
+uint64_t WLRTAtomic64Sub(volatile uint64_t* memory, uint64_t value)
+{
+	return WLRTAtomic64Add(memory, ~value + 1);
+}
+
+void WLRTAtomicWait(volatile void* memory, const void* expected, size_t expectedSize)
+{
+	WaitOnAddress(memory, (PVOID) expected, expectedSize, ~0U);
+}
+
+void WLRTAtomicWakeOne(void* memory)
+{
+	WakeByAddressSingle(memory);
+}
+
+void WLRTAtomicWakeAll(void* memory)
+{
+	WakeByAddressAll(memory);
 }
 
 uint32_t WLRTGetCurrentThreadId()
@@ -267,3 +303,32 @@ uint64_t WLRTGetHighResTime()
 	#error Threading.c, System not supported
 
 #endif
+
+bool WLRTMutexSetup(WLRTMutex* mutex)
+{
+	mutex->inUse = 0;
+	return true;
+}
+
+void WLRTMutexCleanup(WLRTMutex* mutex)
+{
+	(void) mutex;
+}
+
+void WLRTMutexLock(WLRTMutex* mutex)
+{
+	uint32_t val;
+	while ((val = WLRTAtomic32CompareExchange(&mutex->inUse, 0, 1)) == 1)
+		WLRTAtomicWait(&mutex->inUse, &val, sizeof(uint32_t));
+}
+
+bool WLRTMutexTryLock(WLRTMutex* mutex)
+{
+	return WLRTAtomic32CompareExchange(&mutex->inUse, 0, 1) == 0;
+}
+
+void WLRTMutexUnlock(WLRTMutex* mutex)
+{
+	if (WLRTAtomic32Exchange(&mutex->inUse, 0) == 1)
+		WLRTAtomicWakeOne(&mutex->inUse);
+}

@@ -1,6 +1,7 @@
 #include "FileWatcher.h"
 #include "Build.h"
 #include "DynArray.h"
+#include "Memory.h"
 #include "Threading.h"
 
 #include <stdlib.h>
@@ -57,7 +58,7 @@ static int WLRTFileWatcherFunc(void* userData)
 	WLRTPathSetup(&tempPath2);
 
 	size_t tempFilenameBufferCap = MAX_PATH * sizeof(wchar_t);
-	char*  tempFilenameBuffer    = malloc((tempFilenameBufferCap + 1) * sizeof(char));
+	char*  tempFilenameBuffer    = (char*) WLRTAlloc((tempFilenameBufferCap + 1) * sizeof(char), alignof(char));
 
 	while (s_FileWatcher.running)
 	{
@@ -74,7 +75,7 @@ static int WLRTFileWatcherFunc(void* userData)
 			if (data->count == 0)
 			{
 				WLRTPathCleanup(&data->directory);
-				free(data->buffer);
+				WLRTFree(data->buffer, 16);
 				CloseHandle(data->overlapped.hEvent);
 				CloseHandle(data->handle);
 				WLRTDynArrayErase(&s_FileWatcher.cachedDirectories, i);
@@ -178,6 +179,8 @@ static int WLRTFileWatcherFunc(void* userData)
 		Sleep(250);
 	}
 
+	WLRTFree(tempFilenameBuffer, alignof(char));
+
 	WLRTPathCleanup(&tempPath2);
 	WLRTPathCleanup(&tempPath1);
 
@@ -272,7 +275,7 @@ uint64_t WLRTFileWatcherWatchFile(const WLRTPath* file, WLRTFileWatcherCallbackF
 			.ready     = true
 		};
 		memset(&directory.overlapped, 0, sizeof(OVERLAPPED));
-		directory.buffer            = malloc(directory.bufferCap);
+		directory.buffer            = WLRTAlloc(directory.bufferCap, 16);
 		directory.overlapped.hEvent = CreateEventA(NULL, FALSE, FALSE, directory.directory.path);
 		directory.handle            = CreateFileA(directory.directory.path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, NULL);
 		if (!directory.buffer ||
@@ -284,7 +287,7 @@ uint64_t WLRTFileWatcherWatchFile(const WLRTPath* file, WLRTFileWatcherCallbackF
 			WLRTPathCleanup(&watch->file);
 			WLRTDynArrayPopBack(&s_FileWatcher.watches);
 			WLRTPathCleanup(&dir);
-			free(directory.buffer);
+			WLRTFree(directory.buffer, 16);
 			if (directory.overlapped.hEvent != NULL) // Useless piece of shit
 				CloseHandle(directory.overlapped.hEvent);
 			if (directory.handle != NULL) // Useless piece of shit

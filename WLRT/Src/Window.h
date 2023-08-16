@@ -15,7 +15,9 @@ typedef struct WLRTWindowData
 	bool wantsClose;
 } WLRTWindowData;
 
-void WLRTWindowPollEvents();
+bool WLRTWindowingSetup();
+void WLRTWindowingCleanup();
+void WLRTWindowingPollEvents();
 
 bool WLRTWindowSetup(WLRTWindowData* window);
 void WLRTWindowCleanup(WLRTWindowData* window);

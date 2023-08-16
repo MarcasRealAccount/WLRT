@@ -34,3 +34,24 @@ void WLRTMutexCleanup(WLRTMutex* mutex);
 void WLRTMutexLock(WLRTMutex* mutex);
 bool WLRTMutexTryLock(WLRTMutex* mutex);
 void WLRTMutexUnlock(WLRTMutex* mutex);
+
+typedef struct WLRTDate
+{
+	uint16_t year;
+	uint8_t  month     : 4;
+	uint8_t  dayOfWeek : 4;
+	uint8_t  day;
+	uint8_t  hour;
+	uint8_t  minute;
+	uint8_t  second;
+	uint16_t millisecond;
+} WLRTDate;
+
+uint32_t WLRTGetCurrentThreadId();
+
+WLRTDate WLRTGetUTCDate();
+WLRTDate WLRTGetLocalDate();
+int64_t  WLRTDateToUnixTime(WLRTDate date);
+WLRTDate WLRTUnixTimeToDate(int64_t unixTime);
+uint64_t WLRTGetSteadyTime();
+uint64_t WLRTGetHighResTime();

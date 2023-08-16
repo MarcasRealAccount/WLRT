@@ -1,7 +1,15 @@
 #include "Window.h"
+#include "Logging.h"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+
+static WLRTLoggerData s_GLFWLogger;
+
+static void GLFWErrorCallback(int code, const char* message)
+{
+	WLRTLoggerErrorF(&s_GLFWLogger, WLRTStringViewCreate("(%d) %s", 7), code, message);
+}
 
 static void GLFWWindowPosCallback(GLFWwindow* window, int x, int y)
 {
@@ -23,7 +31,26 @@ static void GLFWWindowCloseCallback(GLFWwindow* window)
 	wd->wantsClose     = true;
 }
 
-void WLRTWindowPollEvents()
+bool WLRTWindowingSetup()
+{
+	if (!WLRTLoggerSetup(&s_GLFWLogger, WLRTStringViewCreate("GLFW", 4)))
+		return false;
+	glfwSetErrorCallback(&GLFWErrorCallback);
+	if (!glfwInit())
+	{
+		WLRTLoggerCleanup(&s_GLFWLogger);
+		return false;
+	}
+	return true;
+}
+
+void WLRTWindowingCleanup()
+{
+	glfwTerminate();
+	WLRTLoggerCleanup(&s_GLFWLogger);
+}
+
+void WLRTWindowingPollEvents()
 {
 	glfwPollEvents();
 }

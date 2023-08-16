@@ -1,5 +1,6 @@
 #include "Filesystem.h"
 #include "Build.h"
+#include "Memory.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -11,41 +12,41 @@
 
 WLRTPath WLRTPathExec()
 {
-	wchar_t* wbuffer = (wchar_t*) malloc(32768 * sizeof(wchar_t));
+	wchar_t* wbuffer = (wchar_t*) WLRTAlloc(32768 * sizeof(wchar_t), alignof(wchar_t));
 	if (!wbuffer)
 		return WLRTPathCreate(NULL, 0);
 	DWORD len = GetModuleFileNameW(NULL, wbuffer, 32767);
 	while (len > 0 && wbuffer[len - 1] != L'\\')
 		--len;
-	char* buffer = (char*) malloc(len * sizeof(wchar_t));
+	char* buffer = (char*) WLRTAlloc(len * sizeof(wchar_t), alignof(char));
 	if (!buffer)
 	{
-		free(wbuffer);
+		WLRTFree(wbuffer, alignof(wchar_t));
 		return WLRTPathCreate(NULL, 0);
 	}
 	int      bufLen = WideCharToMultiByte(CP_UTF8, 0, wbuffer, len, buffer, len * sizeof(wchar_t), NULL, NULL);
 	WLRTPath path   = WLRTPathCreate(buffer, bufLen);
-	free(wbuffer);
-	free(buffer);
+	WLRTFree(wbuffer, alignof(wchar_t));
+	WLRTFree(buffer, alignof(char));
 	return path;
 }
 
 WLRTPath WLRTPathCWD()
 {
-	wchar_t* wbuffer = (wchar_t*) malloc(32768 * sizeof(wchar_t));
+	wchar_t* wbuffer = (wchar_t*) WLRTAlloc(32768 * sizeof(wchar_t), alignof(wchar_t));
 	if (!wbuffer)
 		return WLRTPathCreate(NULL, 0);
 	DWORD len    = GetCurrentDirectoryW(32767, wbuffer);
 	char* buffer = (char*) malloc(len * sizeof(wchar_t));
 	if (!buffer)
 	{
-		free(wbuffer);
+		WLRTFree(wbuffer, alignof(wchar_t));
 		return WLRTPathCreate(NULL, 0);
 	}
 	int      bufLen = WideCharToMultiByte(CP_UTF8, 0, wbuffer, len, buffer, len * sizeof(wchar_t), NULL, NULL);
 	WLRTPath path   = WLRTPathCreate(buffer, bufLen);
-	free(wbuffer);
-	free(buffer);
+	WLRTFree(wbuffer, alignof(wchar_t));
+	WLRTFree(buffer, alignof(char));
 	return path;
 }
 
@@ -135,14 +136,14 @@ static void WLRTPathResolve(WLRTPath* path)
 	if (handle && handle != INVALID_HANDLE_VALUE)
 	{
 		do {
-			wchar_t* wbuffer = (wchar_t*) malloc(32768 * sizeof(wchar_t));
+			wchar_t* wbuffer = (wchar_t*) WLRTAlloc(32768 * sizeof(wchar_t), alignof(wchar_t));
 			if (!wbuffer)
 				break;
 			DWORD len    = GetFinalPathNameByHandleW(handle, wbuffer, 32768, 0);
-			char* buffer = (char*) malloc(len * sizeof(wchar_t) * sizeof(char));
+			char* buffer = (char*) WLRTAlloc(len * sizeof(wchar_t) * sizeof(char), alignof(char));
 			if (!buffer)
 			{
-				free(wbuffer);
+				WLRTFree(wbuffer, alignof(wchar_t));
 				break;
 			}
 			int bufLen        = WideCharToMultiByte(CP_UTF8, 0, wbuffer, len, buffer, len * sizeof(wchar_t), NULL, NULL);
@@ -154,8 +155,8 @@ static void WLRTPathResolve(WLRTPath* path)
 			};
 			WLRTPathNormalize(&tempPath);
 			WLRTPathReplace(path, 0, offset, &tempPath, ~0ULL);
-			free(wbuffer);
-			free(buffer);
+			WLRTFree(wbuffer, alignof(wchar_t));
+			WLRTFree(buffer, alignof(char));
 		}
 		while (false);
 	}
@@ -180,7 +181,7 @@ bool WLRTPathSetup(WLRTPath* path)
 
 void WLRTPathCleanup(WLRTPath* path)
 {
-	free(path->path);
+	WLRTFree(path->path, alignof(char));
 	path->path     = NULL;
 	path->length   = 0;
 	path->capacity = 0;
@@ -199,13 +200,13 @@ static bool WLRTPathEnsureSize(WLRTPath* path, size_t size)
 	newCapacity       |= newCapacity >> 16;
 	newCapacity       |= newCapacity >> 32;
 	++newCapacity;
-	char* newBuf = (char*) malloc(newCapacity);
+	char* newBuf = (char*) WLRTAlloc(newCapacity, alignof(char));
 	if (!newBuf)
 		return false;
 
 	memcpy(newBuf, path->path, path->length);
 	newBuf[path->length] = '\0';
-	free(path->path);
+	WLRTFree(path->path, alignof(char));
 	path->capacity = newCapacity;
 	path->path     = newBuf;
 	return true;
@@ -294,17 +295,17 @@ WLRTPath WLRTPathCopy(const WLRTPath* path)
 	return path ? WLRTPathCreate(path->path, path->length) : WLRTPathCreate(NULL, 0);
 }
 
-bool WLRTPathAssign(WLRTPath* lhs, const WLRTPath* rhs)
+bool WLRTPathAssign(WLRTPath* path, const WLRTPath* rhs)
 {
-	if (!lhs || !rhs)
+	if (!path || !rhs)
 		return false;
 
-	if (!WLRTPathEnsureSize(lhs, rhs->length))
+	if (!WLRTPathEnsureSize(path, rhs->length))
 		return false;
 
-	memcpy(lhs->path, rhs->path, rhs->length);
-	lhs->length            = rhs->length;
-	lhs->path[lhs->length] = '\0';
+	memcpy(path->path, rhs->path, rhs->length);
+	path->length             = rhs->length;
+	path->path[path->length] = '\0';
 	return true;
 }
 
@@ -366,48 +367,48 @@ bool WLRTPathReplace(WLRTPath* path, size_t offset, size_t end, const WLRTPath* 
 	return true;
 }
 
-bool WLRTPathPrepend(WLRTPath* lhs, const WLRTPath* rhs)
+bool WLRTPathPrepend(WLRTPath* path, const WLRTPath* rhs)
 {
-	if (!lhs || !rhs)
+	if (!path || !rhs)
 		return false;
 
 	size_t offset1 = 0;
 	size_t len1    = rhs->length;
-	if (lhs->length > 0 && lhs->path[0] == '/')
+	if (path->length > 0 && path->path[0] == '/')
 		++offset1;
 	if (rhs->length > 0 && rhs->path[len1 - 1] == '/')
 		--len1;
-	size_t requiredSize = lhs->length - offset1 + len1 + 1;
-	if (!WLRTPathEnsureSize(lhs, requiredSize))
+	size_t requiredSize = path->length - offset1 + len1 + 1;
+	if (!WLRTPathEnsureSize(path, requiredSize))
 		return false;
 
-	memmove(lhs->path + len1 + 1, lhs->path + offset1, lhs->length - offset1);
-	lhs->path[len1] = '/';
-	memcpy(lhs->path, rhs->path, len1);
-	lhs->length            = requiredSize;
-	lhs->path[lhs->length] = '\0';
+	memmove(path->path + len1 + 1, path->path + offset1, path->length - offset1);
+	path->path[len1] = '/';
+	memcpy(path->path, rhs->path, len1);
+	path->length             = requiredSize;
+	path->path[path->length] = '\0';
 	return true;
 }
 
-bool WLRTPathAppend(WLRTPath* lhs, const WLRTPath* rhs)
+bool WLRTPathAppend(WLRTPath* path, const WLRTPath* rhs)
 {
-	if (!lhs || !rhs)
+	if (!path || !rhs)
 		return false;
 
-	size_t len1    = lhs->length;
+	size_t len1    = path->length;
 	size_t offset1 = 0;
-	if (lhs->length > 0 && lhs->path[len1 - 1] == '/')
+	if (path->length > 0 && path->path[len1 - 1] == '/')
 		--len1;
-	if (rhs->length > 0 && lhs->path[0] == '/')
+	if (rhs->length > 0 && path->path[0] == '/')
 		++offset1;
 	size_t requiredSize = len1 + rhs->length - offset1 + 1;
-	if (!WLRTPathEnsureSize(lhs, requiredSize))
+	if (!WLRTPathEnsureSize(path, requiredSize))
 		return false;
 
-	lhs->path[len1] = '/';
-	memcpy(lhs->path + len1 + 1, rhs->path + offset1, rhs->length - offset1);
-	lhs->length            = requiredSize;
-	lhs->path[lhs->length] = '\0';
+	path->path[len1] = '/';
+	memcpy(path->path + len1 + 1, rhs->path + offset1, rhs->length - offset1);
+	path->length             = requiredSize;
+	path->path[path->length] = '\0';
 	return true;
 }
 

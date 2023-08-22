@@ -25,6 +25,10 @@ mdate_t  mdate_local_now();
 int8_t   mdate_timezone();
 int64_t  mdate_to_unix(mdate_t date);
 mdate_t  mdate_from_unix(int64_t unix);
+uint64_t mtime_steady_freq();
+uint64_t mtime_high_res_freq();
+double   mtime_steady_factor();
+double   mtime_high_res_factor();
 uint64_t mtime_steady();
 uint64_t mtime_high_res();
 

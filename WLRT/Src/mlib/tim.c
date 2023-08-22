@@ -5,14 +5,29 @@
 
 #if BUILD_IS_SYSTEM_WINDOWS
 	#include <Windows.h>
+	#include <powerbase.h>
 	#include <intrin.h>
+
+	#pragma comment(lib, "PowrProf.lib")
+
+typedef struct _PROCESSOR_POWER_INFORMATION
+{
+	ULONG Number;
+	ULONG MaxMhz;
+	ULONG CurrentMhz;
+	ULONG MhzLimit;
+	ULONG MaxIdleState;
+	ULONG CurrentIdleState;
+} PROCESSOR_POWER_INFORMATION, *PPROCESSOR_POWER_INFORMATION;
 #else
 #endif
 
-static bool s_HRSupported = false;
+static bool     s_HRSupported = false;
+static uint64_t s_HRF         = 1;
+static double   s_HRFactor    = 1;
 #if BUILD_IS_SYSTEM_WINDOWS
-static LARGE_INTEGER s_QPF;
-static uint64_t      s_QPCFactor;
+static uint64_t s_QPF       = 1;
+static double   s_QPCFactor = 1;
 #else
 #endif
 
@@ -21,6 +36,9 @@ bool mtime_init()
 #if BUILD_IS_SYSTEM_WINDOWS
 	do {
 		int res[4];
+		__cpuid(res, 0x80000001);
+		if (!(res[2] & 0x00800000))
+			break;
 		__cpuid(res, 0x000000001);
 		if (!(res[3] & 0x00000010))
 			break;
@@ -28,10 +46,20 @@ bool mtime_init()
 		if (!(res[3] & 0x00000100))
 			break;
 		s_HRSupported = true;
+
+		SYSTEM_INFO sysInfo;
+		GetSystemInfo(&sysInfo);
+
+		PROCESSOR_POWER_INFORMATION info;
+		CallNtPowerInformation(ProcessorInformation, NULL, 0, &info, sizeof(info));
+		s_HRF      = info.MaxMhz * 1000000ULL;
+		s_HRFactor = 1e9 / s_HRF;
 	}
 	while (false);
-	QueryPerformanceFrequency(&s_QPF);
-	s_QPCFactor = 1000000000ULL / s_QPF.QuadPart;
+	LARGE_INTEGER qpf;
+	QueryPerformanceFrequency(&qpf);
+	s_QPF       = qpf.QuadPart;
+	s_QPCFactor = 1e9 / s_QPF;
 #else
 #endif
 	return true;
@@ -141,12 +169,38 @@ mdate_t mdate_from_unix(int64_t unix)
 	return date;
 }
 
+uint64_t mtime_steady_freq()
+{
+#if BUILD_IS_SYSTEM_WINDOWS
+	return s_QPF;
+#else
+#endif
+}
+
+uint64_t mtime_high_res_freq()
+{
+	return s_HRSupported ? s_HRF : mtime_steady_freq();
+}
+
+double mtime_steady_factor()
+{
+#if BUILD_IS_SYSTEM_WINDOWS
+	return s_QPCFactor;
+#else
+#endif
+}
+
+double mtime_high_res_factor()
+{
+	return s_HRSupported ? s_HRFactor : mtime_steady_factor();
+}
+
 uint64_t mtime_steady()
 {
 #if BUILD_IS_SYSTEM_WINDOWS
 	LARGE_INTEGER counter;
 	QueryPerformanceCounter(&counter);
-	return counter.QuadPart * s_QPCFactor;
+	return (uint64_t) counter.QuadPart;
 #else
 #endif
 }

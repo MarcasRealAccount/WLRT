@@ -5,6 +5,8 @@
 #include "thread.h"
 #include "tim.h"
 
+#include <stdio.h>
+
 typedef enum mlog_format_part_e
 {
 	mlog_format_part_str = 0,
@@ -404,6 +406,29 @@ static void mlog_log(const mlogger_t* logger, mlog_severity_e severity, mstringv
 	mlog_write(severity, mstringviews(&buffer));
 	mlog_flush(severity);
 	mstring_dstr(&buffer);
+}
+
+static void mlog_stdout_write(void* data, bool isError, mstringview_t buffer)
+{
+	(void) data;
+	fwrite(buffer.string, sizeof(char), buffer.length, isError ? stderr : stdout);
+}
+
+static void mlog_stdout_flush(void* data, bool isError)
+{
+	(void) data;
+	fflush(isError ? stderr : stdout);
+}
+
+mlog_sink_t mlog_stdout_sink()
+{
+	mlog_sink_t sink = {
+		.severity = mlog_severity_info,
+		.write    = &mlog_stdout_write,
+		.flush    = &mlog_stdout_flush,
+		.data     = NULL
+	};
+	return sink;
 }
 
 mlogger_t mlogger(mstringview_t name)

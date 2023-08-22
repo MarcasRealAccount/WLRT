@@ -6,32 +6,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-
-static void consoleWrite(void* data, bool isError, mstringview_t buffer)
-{
-	(void) data;
-	fwrite(buffer.string, sizeof(char), buffer.length, isError ? stderr : stdout);
-}
-
-static void consoleFlush(void* data, bool isError)
-{
-	(void) data;
-	fflush(isError ? stderr : stdout);
-}
 
 int main()
 {
 	if (!mlib_init())
 		return 1;
 
-	mlog_sink_t consoleSink = {
-		.severity = mlog_severity_info,
-		.write    = &consoleWrite,
-		.flush    = &consoleFlush,
-		.data     = NULL
-	};
-	mlog_sink_register(&consoleSink);
+	mlog_sink_t stdoutSink = mlog_stdout_sink();
+	mlog_sink_register(&stdoutSink);
 
 	size_t   iterCount = 100000ULL;
 	uint64_t start     = mtime_high_res();

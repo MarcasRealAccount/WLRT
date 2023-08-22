@@ -30,6 +30,8 @@ typedef struct mlogger_t
 	mstring_t name;
 } mlogger_t;
 
+mlog_sink_t mlog_stdout_sink();
+
 mlogger_t  mlogger(mstringview_t name);
 mlogger_t* mlogger_new(mstringview_t name);
 void       mlogger_del(mlogger_t* self);

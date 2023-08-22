@@ -50,10 +50,11 @@ bool mtime_init()
 		SYSTEM_INFO sysInfo;
 		GetSystemInfo(&sysInfo);
 
-		PROCESSOR_POWER_INFORMATION info;
-		CallNtPowerInformation(ProcessorInformation, NULL, 0, &info, sizeof(info));
-		s_HRF      = info.MaxMhz * 1000000ULL;
+		PROCESSOR_POWER_INFORMATION* infos = (PROCESSOR_POWER_INFORMATION*) mmalloc(sysInfo.dwNumberOfProcessors * sizeof(PROCESSOR_POWER_INFORMATION));
+		CallNtPowerInformation(ProcessorInformation, NULL, 0, infos, sysInfo.dwNumberOfProcessors * sizeof(PROCESSOR_POWER_INFORMATION));
+		s_HRF      = infos->MaxMhz * 1000000ULL;
 		s_HRFactor = 1e9 / s_HRF;
+		mfree(infos);
 	}
 	while (false);
 	LARGE_INTEGER qpf;

@@ -36,6 +36,7 @@ uint64_t func(void* pData)
 		if (lat < data->bestLatency)
 			data->bestLatency = lat;
 		data->avgLatency += lat;
+		mwarnf(mstringviewcstr("Funky stuff %s"), "lmao");
 	}
 	return 0;
 }

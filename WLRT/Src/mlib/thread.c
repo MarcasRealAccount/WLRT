@@ -29,9 +29,9 @@ typedef struct mthread_storage_t
 	jmp_buf returnJmpBuf;
 } mthread_storage_t;
 
-static size_t          g_ThreadStorageID = ~0ULL;
-static mshared_mutex_t g_ThreadsMtx;
-static mdynarray_t     g_Threads;
+static size_t          s_ThreadStorageID = ~0ULL;
+static mshared_mutex_t s_ThreadsMtx;
+static mdynarray_t     s_Threads;
 
 static DWORD mthread_thunk(PVOID data)
 {
@@ -47,9 +47,10 @@ static DWORD mthread_thunk(PVOID data)
 	storage->waitEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
 #else
 #endif
-	mshared_mutex_lock_busy(&g_ThreadsMtx);
-	mdynarray_pushback(&g_Threads, &storage);
-	mshared_mutex_unlock_busy(&g_ThreadsMtx);
+	mthread_storage_set(s_ThreadStorageID, storage);
+	mshared_mutex_lock_busy(&s_ThreadsMtx);
+	mdynarray_pushback(&s_Threads, &storage);
+	mshared_mutex_unlock_busy(&s_ThreadsMtx);
 
 	if (!setjmp(storage->returnJmpBuf))
 	{
@@ -57,29 +58,30 @@ static DWORD mthread_thunk(PVOID data)
 		mexit_handle();
 	}
 
-	mshared_mutex_lock_busy(&g_ThreadsMtx);
-	for (size_t i = 0; i < g_Threads.size; ++i)
+	mshared_mutex_lock_busy(&s_ThreadsMtx);
+	for (size_t i = 0; i < s_Threads.size; ++i)
 	{
-		if (*(mthread_storage_t**) mdynarray_get(&g_Threads, i) != storage)
+		if (*(mthread_storage_t**) mdynarray_get(&s_Threads, i) != storage)
 			continue;
-		mdynarray_erase(&g_Threads, i, 1);
+		mdynarray_erase(&s_Threads, i, 1);
 		break;
 	}
-	mshared_mutex_unlock_busy(&g_ThreadsMtx);
+	mshared_mutex_unlock_busy(&s_ThreadsMtx);
 #if BUILD_IS_SYSTEM_WINDOWS
 	if (storage->waitEvent)
 		CloseHandle(storage->waitEvent);
 #else
 #endif
+	mthread_storage_set(s_ThreadStorageID, NULL);
 	mfree(storage);
 	return 0;
 }
 
 bool mthread_init()
 {
-	g_ThreadStorageID = mthread_storage_alloc();
-	mshared_mutex_cstr(&g_ThreadsMtx);
-	mdynarray_cstr(&g_Threads, 32, sizeof(mthread_storage_t*));
+	s_ThreadStorageID = mthread_storage_alloc();
+	mshared_mutex_cstr(&s_ThreadsMtx);
+	mdynarray_cstr(&s_Threads, 32, sizeof(mthread_storage_t*));
 
 #if BUILD_IS_SYSTEM_WINDOWS
 	DWORD tid = GetCurrentThreadId();
@@ -96,16 +98,16 @@ bool mthread_init()
 	storage->waitEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
 #else
 #endif
-	mthread_storage_set(g_ThreadStorageID, storage);
-	mdynarray_pushback(&g_Threads, &storage);
+	mthread_storage_set(s_ThreadStorageID, storage);
+	mdynarray_pushback(&s_Threads, &storage);
 	return true;
 }
 
 void mthread_deinit()
 {
-	for (size_t i = 0; i < g_Threads.size; ++i)
+	for (size_t i = 0; i < s_Threads.size; ++i)
 	{
-		mthread_storage_t* storage = *(mthread_storage_t**) mdynarray_get(&g_Threads, i);
+		mthread_storage_t* storage = *(mthread_storage_t**) mdynarray_get(&s_Threads, i);
 		mthread_dstr(storage->thread);
 #if BUILD_IS_SYSTEM_WINDOWS
 		CloseHandle(storage->waitEvent);
@@ -113,20 +115,20 @@ void mthread_deinit()
 #endif
 		mfree(storage);
 	}
-	mdynarray_dstr(&g_Threads);
-	mshared_mutex_dstr(&g_ThreadsMtx);
-	mthread_storage_free(g_ThreadStorageID);
+	mdynarray_dstr(&s_Threads);
+	mshared_mutex_dstr(&s_ThreadsMtx);
+	mthread_storage_free(s_ThreadStorageID);
 }
 
 mthread_t* mthread_current()
 {
-	mthread_storage_t* storage = (mthread_storage_t*) mthread_storage_get(g_ThreadStorageID);
+	mthread_storage_t* storage = (mthread_storage_t*) mthread_storage_get(s_ThreadStorageID);
 	return storage ? storage->thread : NULL;
 }
 
 mthreadid_t mthread_current_id()
 {
-	mthread_storage_t* storage = (mthread_storage_t*) mthread_storage_get(g_ThreadStorageID);
+	mthread_storage_t* storage = (mthread_storage_t*) mthread_storage_get(s_ThreadStorageID);
 	return storage ? storage->id : 0;
 }
 
@@ -147,7 +149,7 @@ void mthread_wait_on_address(volatile void* address, const void* expected, size_
 	if (!address || !expected || !expectedSize)
 		return;
 
-	mthread_storage_t* storage = (mthread_storage_t*) mthread_storage_get(g_ThreadStorageID);
+	mthread_storage_t* storage = (mthread_storage_t*) mthread_storage_get(s_ThreadStorageID);
 	if (!storage)
 		return;
 
@@ -171,10 +173,10 @@ void mthread_wake_by_address_one(volatile void* address)
 	if (!address)
 		return;
 
-	mshared_mutex_shared_lock_busy(&g_ThreadsMtx);
-	for (size_t i = 0; i < g_Threads.size; ++i)
+	mshared_mutex_shared_lock_busy(&s_ThreadsMtx);
+	for (size_t i = 0; i < s_Threads.size; ++i)
 	{
-		mthread_storage_t* storage = *(mthread_storage_t**) mdynarray_get(&g_Threads, i);
+		mthread_storage_t* storage = *(mthread_storage_t**) mdynarray_get(&s_Threads, i);
 		if (!storage)
 			continue;
 
@@ -188,7 +190,7 @@ void mthread_wake_by_address_one(volatile void* address)
 #endif
 		break;
 	}
-	mshared_mutex_shared_unlock_busy(&g_ThreadsMtx);
+	mshared_mutex_shared_unlock_busy(&s_ThreadsMtx);
 }
 
 void mthread_wake_by_address_all(volatile void* address)
@@ -196,10 +198,10 @@ void mthread_wake_by_address_all(volatile void* address)
 	if (!address)
 		return;
 
-	mshared_mutex_shared_lock_busy(&g_ThreadsMtx);
-	for (size_t i = 0; i < g_Threads.size; ++i)
+	mshared_mutex_shared_lock_busy(&s_ThreadsMtx);
+	for (size_t i = 0; i < s_Threads.size; ++i)
 	{
-		mthread_storage_t* storage = *(mthread_storage_t**) mdynarray_get(&g_Threads, i);
+		mthread_storage_t* storage = *(mthread_storage_t**) mdynarray_get(&s_Threads, i);
 		if (!storage)
 			continue;
 
@@ -212,7 +214,7 @@ void mthread_wake_by_address_all(volatile void* address)
 #else
 #endif
 	}
-	mshared_mutex_shared_unlock_busy(&g_ThreadsMtx);
+	mshared_mutex_shared_unlock_busy(&s_ThreadsMtx);
 }
 
 size_t mthread_storage_alloc()
@@ -257,7 +259,7 @@ void mthread_sleep(size_t timeout)
 
 void mthread_exit(uint64_t exitCode)
 {
-	mthread_storage_t* storage = (mthread_storage_t*) mthread_storage_get(g_ThreadStorageID);
+	mthread_storage_t* storage = (mthread_storage_t*) mthread_storage_get(s_ThreadStorageID);
 	if (!storage || !storage->thread)
 		return;
 	storage->thread->exitCode = exitCode;

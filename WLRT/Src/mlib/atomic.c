@@ -5,7 +5,18 @@
 #if BUILD_IS_SYSTEM_WINDOWS
 	#include <intrin.h>
 	#include <Windows.h>
+#elif BUILD_IS_TOOLSET_CLANG
+	#define ATOMICFUNC(func, ...) __c11_atomic_##func(__VA_ARGS__, __ATOMIC_SEQ_CST)
+	#define ATOMICFUNC2(func, ...) __c11_atomic_##func(__VA_ARGS__, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+#elif BUILD_IS_TOOLSET_GCC
+	#define ATOMICFUNC(func, ...) __atomic_##func(__VA_ARGS__, __ATOMIC_SEQ_CST)
+	#define ATOMICFUNC2(func, ...) __atomic_##func(__VA_ARGS__, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+#elif !defined(__STDC_NO_ATOMICS__)
+	#include "stdatomic.h"
+	#define ATOMICFUNC(func, ...) atomic_##func(__VA_ARGS__)
+	#define ATOMICFUNC2(func, ...) atomic_##func(__VA_ARGS__)
 #else
+	#error Atomics are not supported on the target platform!
 #endif
 
 #if BUILD_IS_PLATFORM_X86
@@ -214,6 +225,7 @@ uint8_t matomic8_exchange(volatile uint8_t* memory, uint8_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint8_t) _InterlockedExchange8((volatile char*) memory, (char) value);
 #else
+	return (uint8_t) ATOMICFUNC(exchange, (_Atomic volatile uint8_t*) memory, value);
 #endif
 }
 
@@ -222,6 +234,7 @@ uint16_t matomic16_exchange(volatile uint16_t* memory, uint16_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint16_t) _InterlockedExchange16((volatile short*) memory, (short) value);
 #else
+	return (uint16_t) ATOMICFUNC(exchange, (_Atomic volatile uint16_t*) memory, value);
 #endif
 }
 
@@ -230,6 +243,7 @@ uint32_t matomic32_exchange(volatile uint32_t* memory, uint32_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint32_t) _InterlockedExchange((volatile long*) memory, (long) value);
 #else
+	return (uint32_t) ATOMICFUNC(exchange, (_Atomic volatile uint32_t*) memory, value);
 #endif
 }
 
@@ -238,6 +252,7 @@ uint64_t matomic64_exchange(volatile uint64_t* memory, uint64_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint64_t) _InterlockedExchange64((volatile long long*) memory, (long long) value);
 #else
+	return (uint64_t) ATOMICFUNC(exchange, (_Atomic volatile uint64_t*) memory, value);
 #endif
 }
 
@@ -256,6 +271,7 @@ uint8_t matomic8_compare_exchange_strong(volatile uint8_t* memory, uint8_t expec
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint8_t) _InterlockedCompareExchange8((volatile char*) memory, (char) value, (char) expected);
 #else
+	return (uint8_t) ATOMICFUNC2(compare_exchange_strong, (_Atomic volatile uint8_t*) memory, &expected, value);
 #endif
 }
 
@@ -264,6 +280,7 @@ uint16_t matomic16_compare_exchange_strong(volatile uint16_t* memory, uint16_t e
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint16_t) _InterlockedCompareExchange16((volatile short*) memory, (short) value, (short) expected);
 #else
+	return (uint16_t) ATOMICFUNC2(compare_exchange_strong, (_Atomic volatile uint16_t*) memory, &expected, value);
 #endif
 }
 
@@ -272,6 +289,7 @@ uint32_t matomic32_compare_exchange_strong(volatile uint32_t* memory, uint32_t e
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint32_t) _InterlockedCompareExchange((volatile long*) memory, (long) value, (long) expected);
 #else
+	return (uint32_t) ATOMICFUNC2(compare_exchange_strong, (_Atomic volatile uint32_t*) memory, &expected, value);
 #endif
 }
 
@@ -280,6 +298,7 @@ uint64_t matomic64_compare_exchange_strong(volatile uint64_t* memory, uint64_t e
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint64_t) _InterlockedCompareExchange64((volatile long long*) memory, (long long) value, (long long) expected);
 #else
+	return (uint64_t) ATOMICFUNC2(compare_exchange_strong, (_Atomic volatile uint64_t*) memory, &expected, value);
 #endif
 }
 
@@ -298,6 +317,7 @@ uint8_t matomic8_compare_exchange_weak(volatile uint8_t* memory, uint8_t expecte
 #if BUILD_IS_PLATFORM_X86 || BUILD_IS_PLATFORM_AMD64
 	return matomic8_compare_exchange_strong(memory, expected, value);
 #else
+	return (uint8_t) ATOMICFUNC2(compare_exchange_weak, (_Atomic volatile uint8_t*) memory, &expected, value);
 #endif
 }
 
@@ -306,6 +326,7 @@ uint16_t matomic16_compare_exchange_weak(volatile uint16_t* memory, uint16_t exp
 #if BUILD_IS_PLATFORM_X86 || BUILD_IS_PLATFORM_AMD64
 	return matomic16_compare_exchange_strong(memory, expected, value);
 #else
+	return (uint16_t) ATOMICFUNC2(compare_exchange_weak, (_Atomic volatile uint16_t*) memory, &expected, value);
 #endif
 }
 
@@ -314,6 +335,7 @@ uint32_t matomic32_compare_exchange_weak(volatile uint32_t* memory, uint32_t exp
 #if BUILD_IS_PLATFORM_X86 || BUILD_IS_PLATFORM_AMD64
 	return matomic32_compare_exchange_strong(memory, expected, value);
 #else
+	return (uint32_t) ATOMICFUNC2(compare_exchange_weak, (_Atomic volatile uint32_t*) memory, &expected, value);
 #endif
 }
 
@@ -322,6 +344,7 @@ uint64_t matomic64_compare_exchange_weak(volatile uint64_t* memory, uint64_t exp
 #if BUILD_IS_PLATFORM_X86 || BUILD_IS_PLATFORM_AMD64
 	return matomic64_compare_exchange_strong(memory, expected, value);
 #else
+	return (uint64_t) ATOMICFUNC2(compare_exchange_weak, (_Atomic volatile uint64_t*) memory, &expected, value);
 #endif
 }
 
@@ -340,6 +363,7 @@ uint8_t matomic8_fetch_add(volatile uint8_t* memory, uint8_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint8_t) _InterlockedExchangeAdd8((volatile char*) memory, (char) value);
 #else
+	return (uint8_t) ATOMICFUNC(fetch_add, (_Atomic volatile uint8_t*) memory, value);
 #endif
 }
 
@@ -348,6 +372,7 @@ uint16_t matomic16_fetch_add(volatile uint16_t* memory, uint16_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint16_t) _InterlockedExchangeAdd16((volatile short*) memory, (short) value);
 #else
+	return (uint16_t) ATOMICFUNC(fetch_add, (_Atomic volatile uint16_t*) memory, value);
 #endif
 }
 
@@ -356,6 +381,7 @@ uint32_t matomic32_fetch_add(volatile uint32_t* memory, uint32_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint32_t) _InterlockedExchangeAdd((volatile long*) memory, (long) value);
 #else
+	return (uint32_t) ATOMICFUNC(fetch_add, (_Atomic volatile uint32_t*) memory, value);
 #endif
 }
 
@@ -364,6 +390,7 @@ uint64_t matomic64_fetch_add(volatile uint64_t* memory, uint64_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint64_t) _InterlockedExchangeAdd64((volatile long long*) memory, (long long) value);
 #else
+	return (uint64_t) ATOMICFUNC(fetch_add, (_Atomic volatile uint64_t*) memory, value);
 #endif
 }
 
@@ -402,6 +429,7 @@ uint8_t matomic8_fetch_or(volatile uint8_t* memory, uint8_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint8_t) _InterlockedOr8((volatile char*) memory, (char) value);
 #else
+	return (uint8_t) ATOMICFUNC(fetch_or, (_Atomic volatile uint8_t*) memory, value);
 #endif
 }
 
@@ -410,6 +438,7 @@ uint16_t matomic16_fetch_or(volatile uint16_t* memory, uint16_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint16_t) _InterlockedOr16((volatile short*) memory, (short) value);
 #else
+	return (uint16_t) ATOMICFUNC(fetch_or, (_Atomic volatile uint16_t*) memory, value);
 #endif
 }
 
@@ -418,6 +447,7 @@ uint32_t matomic32_fetch_or(volatile uint32_t* memory, uint32_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint32_t) _InterlockedOr((volatile long*) memory, (long) value);
 #else
+	return (uint32_t) ATOMICFUNC(fetch_or, (_Atomic volatile uint32_t*) memory, value);
 #endif
 }
 
@@ -426,6 +456,7 @@ uint64_t matomic64_fetch_or(volatile uint64_t* memory, uint64_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint64_t) _InterlockedOr64((volatile long long*) memory, (long long) value);
 #else
+	return (uint64_t) ATOMICFUNC(fetch_or, (_Atomic volatile uint64_t*) memory, value);
 #endif
 }
 
@@ -439,6 +470,7 @@ uint8_t matomic8_fetch_xor(volatile uint8_t* memory, uint8_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint8_t) _InterlockedXor8((volatile char*) memory, (char) value);
 #else
+	return (uint8_t) ATOMICFUNC(fetch_xor, (_Atomic volatile uint8_t*) memory, value);
 #endif
 }
 
@@ -447,6 +479,7 @@ uint16_t matomic16_fetch_xor(volatile uint16_t* memory, uint16_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint16_t) _InterlockedXor16((volatile short*) memory, (short) value);
 #else
+	return (uint16_t) ATOMICFUNC(fetch_xor, (_Atomic volatile uint16_t*) memory, value);
 #endif
 }
 
@@ -455,6 +488,7 @@ uint32_t matomic32_fetch_xor(volatile uint32_t* memory, uint32_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint32_t) _InterlockedXor((volatile long*) memory, (long) value);
 #else
+	return (uint32_t) ATOMICFUNC(fetch_xor, (_Atomic volatile uint32_t*) memory, value);
 #endif
 }
 
@@ -463,6 +497,7 @@ uint64_t matomic64_fetch_xor(volatile uint64_t* memory, uint64_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint64_t) _InterlockedXor64((volatile long long*) memory, (long long) value);
 #else
+	return (uint64_t) ATOMICFUNC(fetch_xor, (_Atomic volatile uint64_t*) memory, value);
 #endif
 }
 
@@ -476,6 +511,7 @@ uint8_t matomic8_fetch_and(volatile uint8_t* memory, uint8_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint8_t) _InterlockedAnd8((volatile char*) memory, (char) value);
 #else
+	return (uint8_t) ATOMICFUNC(fetch_and, (_Atomic volatile uint8_t*) memory, value);
 #endif
 }
 
@@ -484,6 +520,7 @@ uint16_t matomic16_fetch_and(volatile uint16_t* memory, uint16_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint16_t) _InterlockedAnd16((volatile short*) memory, (short) value);
 #else
+	return (uint16_t) ATOMICFUNC(fetch_and, (_Atomic volatile uint16_t*) memory, value);
 #endif
 }
 
@@ -492,6 +529,7 @@ uint32_t matomic32_fetch_and(volatile uint32_t* memory, uint32_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint32_t) _InterlockedAnd((volatile long*) memory, (long) value);
 #else
+	return (uint32_t) ATOMICFUNC(fetch_and, (_Atomic volatile uint32_t*) memory, value);
 #endif
 }
 
@@ -500,6 +538,7 @@ uint64_t matomic64_fetch_and(volatile uint64_t* memory, uint64_t value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return (uint64_t) _InterlockedAnd64((volatile long long*) memory, (long long) value);
 #else
+	return (uint64_t) ATOMICFUNC(fetch_and, (_Atomic volatile uint64_t*) memory, value);
 #endif
 }
 

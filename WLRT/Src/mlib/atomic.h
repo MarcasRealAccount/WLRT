@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 void matomic_wait(volatile void* address, const void* expected, size_t size);
 void matomic8_wait(volatile uint8_t* memory, uint8_t expected);

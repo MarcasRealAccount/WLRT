@@ -9,7 +9,9 @@
 
 #if BUILD_IS_SYSTEM_WINDOWS
 	#include <Windows.h>
+#elif BUILD_IS_SYSTEM_MACOSX
 #else
+	#include <unistd.h>
 #endif
 
 typedef struct mthread_storage_t
@@ -33,7 +35,11 @@ static size_t          s_ThreadStorageID = ~0ULL;
 static mshared_mutex_t s_ThreadsMtx;
 static mdynarray_t     s_Threads;
 
+#if BUILD_IS_SYSTEM_WINDOWS
 static DWORD mthread_thunk(PVOID data)
+#else
+static void* mthread_thunk(void* data)
+#endif
 {
 	mthread_t* thread = (mthread_t*) data;
 
@@ -74,7 +80,11 @@ static DWORD mthread_thunk(PVOID data)
 #endif
 	mthread_storage_set(s_ThreadStorageID, NULL);
 	mfree(storage);
+#if BUILD_IS_SYSTEM_WINDOWS
 	return 0;
+#else
+	return NULL;
+#endif
 }
 
 bool mthread_init()
@@ -85,7 +95,10 @@ bool mthread_init()
 
 #if BUILD_IS_SYSTEM_WINDOWS
 	DWORD tid = GetCurrentThreadId();
+#elif BUILD_IS_SYSTEM_MACOSX
+	uint32_t tid = 0;
 #else
+	uint32_t tid = gettid();
 #endif
 
 	mthread_storage_t* storage = (mthread_storage_t*) mmalloc(sizeof(mthread_storage_t));
@@ -161,6 +174,7 @@ void mthread_wait_on_address(volatile void* address, const void* expected, size_
 
 #if BUILD_IS_SYSTEM_WINDOWS
 		WaitForSingleObject(storage->waitEvent, ~0U);
+#else
 #endif
 	}
 	storage->waitAddress      = NULL;
@@ -222,6 +236,7 @@ size_t mthread_storage_alloc()
 #if BUILD_IS_SYSTEM_WINDOWS
 	return TlsAlloc();
 #else
+	return 0;
 #endif
 }
 
@@ -230,6 +245,7 @@ void mthread_storage_free(size_t index)
 #if BUILD_IS_SYSTEM_WINDOWS
 	TlsFree((DWORD) index);
 #else
+	(void) index;
 #endif
 }
 
@@ -238,6 +254,8 @@ void* mthread_storage_get(size_t index)
 #if BUILD_IS_SYSTEM_WINDOWS
 	return TlsGetValue((DWORD) index);
 #else
+	(void) index;
+	return NULL;
 #endif
 }
 
@@ -246,6 +264,8 @@ void mthread_storage_set(size_t index, void* value)
 #if BUILD_IS_SYSTEM_WINDOWS
 	TlsSetValue((DWORD) index, value);
 #else
+	(void) index;
+	(void) value;
 #endif
 }
 
@@ -254,6 +274,7 @@ void mthread_sleep(size_t timeout)
 #if BUILD_IS_SYSTEM_WINDOWS
 	Sleep((DWORD) timeout);
 #else
+	(void) timeout;
 #endif
 }
 
@@ -298,6 +319,7 @@ bool mthread_cstr(mthread_t* self, mthreadfunc_t func, void* data)
 	self->native = (void*) CreateThread(NULL, 0, &mthread_thunk, self, CREATE_SUSPENDED, &tid);
 	self->id     = tid;
 #else
+	self->native = &mthread_thunk;
 #endif
 	return self->native != NULL;
 }

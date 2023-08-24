@@ -1,12 +1,26 @@
 #include "filesystem.h"
 #include "build.h"
 #include "mem.h"
+#include "mat.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 #if BUILD_IS_SYSTEM_WINDOWS
 	#include <Windows.h>
+#elif BUILD_IS_SYSTEM_UNIX
+	#include <fcntl.h>
+	#include <utime.h>
+	#include <unistd.h>
+	#include <sys/stat.h>
+	#include <sys/time.h>
+	#include <stdio.h>
+	#if BUILD_IS_SYSTEM_MACOSX
+		#include <copyfile.h>
+		#include <mach-o/dyld.h>
+	#else
+		#include <sys/sendfile.h>
+	#endif
 #else
 #endif
 
@@ -264,6 +278,11 @@ bool mpath_canonical(mpath_t* self)
 		mpath_shrink_to_fit(self);
 		CloseHandle(handle);
 	}
+#elif BUILD_IS_SYSTEM_UNIX
+	char buf[4097];
+	realpath(mpath_begin(self), buf);
+	mpath_assign(self, mstringviewcstr(buf));
+	mpath_shrink_to_fit(self);
 #else
 #endif
 	return true;
@@ -312,7 +331,7 @@ bool mpath_relative(mpath_t* self, mstringview_t root)
 	size_t i      = 0;
 	char*  begin1 = mpath_begin(self);
 	char*  begin2 = mpath_begin(&rootCopy);
-	for (; i < min(self->length, rootCopy.length); ++i)
+	for (; i < mmin(self->length, rootCopy.length); ++i)
 	{
 		if (begin1[i] != begin2[i])
 			break;
@@ -935,6 +954,313 @@ bool mfile_set_status(mstringview_t path, const mfilestatus_t* status)
 	return true;
 }
 
+#elif BUILD_IS_SYSTEM_UNIX
+
+mpath_t mfile_exec()
+{
+	#if BUILD_IS_SYSTEM_MACOSX
+	char buf[4097];
+	uint32_t len = 4097;
+	_NSGetExecutablePath(buf, &len);
+	mpath_t path = mpathv(mstringview(buf, len));
+	mpath_t dir = mpathv(mpath_parent(&path));
+	mpath_dstr(&path);
+	return dir;
+	#else
+	mpath_t path = mpathcstr("/proc/self/exe");
+	if (!mpath_canonical(&path))
+	{
+		mpath_dstr(&path);
+		return mpathcstr(NULL);
+	}
+	mpath_t dir = mpathv(mpath_parent(&path));
+	mpath_dstr(&path);
+	return dir;
+	#endif
+}
+
+mpath_t mfile_cwd()
+{
+	char buf[4097];
+	getcwd(buf, 4097);
+	return mpathcstr(buf);
+}
+
+mpath_t mfile_temp()
+{
+	const char* tempDir = getenv("TMPDIR");
+	if (tempDir == NULL)
+	{
+		mpath_t temp = mpathcstr("tmp/");
+		mpath_t cwd  = mfile_cwd();
+		mpath_prepend(&temp, mstringviewp(&cwd));
+		mpath_dstr(&cwd);
+		return temp;
+	}
+	else
+	{
+		return mpathcstr(tempDir);
+	}
+}
+
+void mfile_set_cwd(mstringview_t path)
+{
+	if (!path.string)
+		return;
+	mpath_t fp = mpathv(path);
+	chdir(mpath_begin(&fp));
+	mpath_dstr(&fp);
+}
+
+static bool mfile_copy_directory(mstringview_t from, mstringview_t to)
+{
+	if (!from.string || !to.string)
+		return false;
+
+	return true;
+}
+
+bool mfile_copy(mstringview_t from, mstringview_t to)
+{
+	if (!from.string || !to.string)
+		return false;
+
+	mfilestatus_t status;
+	if (!mfile_status(from, &status))
+		return false;
+
+	switch (status.type)
+	{
+	case mfiletype_symlink:
+	case mfiletype_file: return mfile_copy_file(from, to);
+	case mfiletype_directory: return mfile_copy_directory(from, to);
+	default: return false;
+	}
+}
+
+bool mfile_copy_file(mstringview_t from, mstringview_t to)
+{
+	if (!from.string || !to.string)
+		return false;
+
+	mpath_t fromfp = mpathv(from);
+	mpath_t tofp   = mpathv(to);
+
+	int fromfd = open(mpath_begin(&fromfp), O_RDONLY);
+	mpath_dstr(&fromfp);
+	if (fromfd == -1)
+	{
+		mpath_dstr(&tofp);
+		return false;
+	}
+	int tofd = open(mpath_begin(&tofp), 0660);
+	mpath_dstr(&tofp);
+	if (tofd == -1)
+	{
+		close(fromfd);
+		return false;
+	}
+#if BUILD_IS_SYSTEM_MACOSX
+	bool result = fcopyfile(fromfd, tofd, 0, COPYFILE_ALL);
+#else
+	struct stat fileinfo;
+	fstat(fromfd, &fileinfo);
+	bool result = sendfile(tofd, fromfd, &bytesCopied, fileinfo.st_size);
+#endif
+	close(fromfd);
+	close(tofd);
+	return result;
+}
+
+bool mfile_create_directory(mstringview_t path)
+{
+	if (!path.string)
+		return false;
+
+	mpath_t fp = mpathv(path);
+	bool result = mkdir(mpath_begin(&fp), 0660);
+	mpath_dstr(&fp);
+	return result;
+}
+
+bool mfile_create_directories(mstringview_t path)
+{
+	if (!path.string)
+		return false;
+
+	mpath_t fp = mpathv(path);
+	bool result = true;
+	size_t offset = 1;
+	bool replaceBack = false;
+	char* begin = mpath_begin(&fp);
+	while (result && offset < path.length)
+	{
+		if (replaceBack)
+			begin[offset] = '/';
+		size_t end = mstringview_find_first_of(path, mstringviewcstr("/"), offset);
+		if (end < path.length)
+			begin[end] = '\0';
+		if (!mkdir(begin, 0660))
+			result = false;
+		if (end >= path.length)
+			break;
+		offset = end + 1;
+	}
+	mpath_dstr(&fp);
+	return result;
+}
+
+bool mfile_remove(mstringview_t path)
+{
+	if (!path.string)
+		return false;
+
+	mfilestatus_t status;
+	if (!mfile_status(path, &status))
+		return false;
+
+	switch (status.type)
+	{
+	case mfiletype_symlink:
+	case mfiletype_file:
+	case mfiletype_directory:
+	{
+		mpath_t fp = mpathv(path);
+		bool result = remove(mpath_begin(&fp));
+		mpath_dstr(&fp);
+		return result;
+	}
+	default: return false;
+	}
+}
+
+size_t mfile_remove_all(mstringview_t path)
+{
+	if (!path.string)
+		return 0;
+
+	mfilestatus_t status;
+	if (!mfile_status(path, &status))
+		return 0;
+	
+	switch (status.type)
+	{
+	case mfiletype_symlink:
+	case mfiletype_file:
+	{
+		mpath_t fp = mpathv(path);
+		bool result = remove(mpath_begin(&fp));
+		mpath_dstr(&fp);
+		return result ? 1 : 0;
+	}
+	case mfiletype_directory:
+	{
+		// TODO(MarcasRealAccount): visit directory files
+		size_t removed = 0;
+		mpath_t fp = mpathv(path);
+		bool result = remove(mpath_begin(&fp));
+		mpath_dstr(&fp);
+		return removed + (result ? 1 : 0);
+	}
+	default: return 0;
+	}
+}
+
+bool mfile_rename(mstringview_t from, mstringview_t to)
+{
+	if (!from.string || !to.string)
+		return false;
+
+	mpath_t fromfp = mpathv(from);
+	mpath_t tofp = mpathv(to);
+	bool result = rename(mpath_begin(&fromfp), mpath_begin(&tofp));
+	mpath_dstr(&fromfp);
+	mpath_dstr(&tofp);
+	return result;
+}
+
+bool mfile_exists(mstringview_t path)
+{
+	if (!path.string)
+		return false;
+
+	mpath_t fp = mpathv(path);
+	int handle = open(mpath_begin(&fp), O_RDONLY);
+	close(handle);
+	mpath_dstr(&fp);
+	return handle != -1;
+}
+
+static mtimestamp_t mfile_timespec_to_timestamp(struct timespec spec)
+{
+	return ((mtimestamp_t) spec.tv_sec) * 1000000 + ((mtimestamp_t) spec.tv_nsec) / 1000;
+}
+
+bool mfile_status(mstringview_t path, mfilestatus_t* status)
+{
+	if (!path.string || !status)
+		return false;
+
+	mpath_t fp = mpathv(path);
+#if BUILD_IS_SYSTEM_MACOSX
+	struct stat fs;
+	stat(mpath_begin(&fp), &fs);
+	mpath_dstr(&fp);
+	status->createTime     = 0; // TODO(MarcasRealAccount): Find createTime somehow on MacOSX
+	status->lastWriteTime  = mfile_timespec_to_timestamp(fs.st_mtimespec);
+	status->lastAccessTime = mfile_timespec_to_timestamp(fs.st_atimespec);
+	status->size           = fs.st_size;
+	status->sizeOnDisk     = fs.st_blocks * 512;
+	switch (fs.st_mode & S_IFMT)
+	{
+	case S_IFLNK: status->type = mfiletype_symlink; break;
+	case S_IFREG: status->type = mfiletype_file; break;
+	case S_IFDIR: status->type = mfiletype_directory; break;
+	default: status->type = mfiletype_none; break;
+	}
+#else
+	struct statx fs;
+	int fd = open(mpath_begin(&fp), O_RDONLY);
+	mpath_dstr(&fp);
+	statx(fd, NULL, AT_EMPTY_PATH, STATX_TYPE | STATX_ATIME | STATX_MTIME | STATX_BTIME | STATX_SIZE | STATX_BLOCKS, &fs);
+	close(fd);
+	status->createTime     = mfile_timespec_to_timestamp(fs.stx_btime);
+	status->lastWriteTime  = mfile_timespec_to_timestamp(fs.stx_mtime);
+	status->lastAccessTime = mfile_timespec_to_timestamp(fs.stx_atime);
+	status->size           = fs.stx_size;
+	status->sizeOnDisk     = fs.stx_blocks * 512;
+	switch (fs.stx_mode & S_IFMT)
+	{
+	case S_IFLNK: status->type = mfiletype_symlink; break;
+	case S_IFREG: status->type = mfiletype_file; break;
+	case S_IFDIR: status->type = mfiletype_directory; break;
+	default: status->type = mfiletype_none; break;
+	}
+#endif
+	return true;
+}
+
+bool mfile_set_status(mstringview_t path, const mfilestatus_t* status)
+{
+	if (!path.string || !status)
+		return false;
+
+	struct timeval times[2] = {
+		{
+			.tv_sec  = status->lastAccessTime / 1000000,
+			.tv_usec = status->lastAccessTime % 1000000
+		},
+		{
+			.tv_sec  = status->lastWriteTime / 1000000,
+			.tv_usec = status->lastWriteTime % 1000000
+		}
+	};
+	mpath_t fp = mpathv(path);
+	bool result = utimes(mpath_begin(&fp), times);
+	mpath_dstr(&fp);
+	return result;
+}
+
 #else
 
 mpath_t mfile_exec()
@@ -954,55 +1280,72 @@ mpath_t mfile_temp()
 
 void mfile_set_cwd(mstringview_t path)
 {
+	(void) path;
 }
 
 bool mfile_copy(mstringview_t from, mstringview_t to)
 {
+	(void) from;
+	(void) to;
 	return false;
 }
 
 bool mfile_copy_file(mstringview_t from, mstringview_t to)
 {
+	(void) from;
+	(void) to;
 	return false;
 }
 
 bool mfile_create_directory(mstringview_t path)
 {
+	(void) path;
 	return false;
 }
 
 bool mfile_create_directories(mstringview_t path)
 {
+	(void) path;
 	return false;
 }
 
 bool mfile_remove(mstringview_t path)
 {
+	(void) path;
 	return false;
 }
 
 size_t mfile_remove_all(mstringview_t path)
 {
+	(void) path;
 	return 0;
 }
 
 bool mfile_rename(mstringview_t from, mstringview_t to)
 {
+	(void) from;
+	(void) to;
 	return false;
 }
 
 bool mfile_exists(mstringview_t path)
 {
+	(void) path;
 	return false;
 }
 
 bool mfile_status(mstringview_t path, mfilestatus_t* status)
 {
+	(void) path;
+	(void) status;
 	return false;
 }
 
 bool mfile_set_status(mstringview_t path, const mfilestatus_t* status)
 {
+	(void) path;
+	(void) status;
 	return false;
 }
+
 #endif

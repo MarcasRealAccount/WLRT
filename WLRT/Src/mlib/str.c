@@ -1,5 +1,6 @@
 #include "str.h"
 #include "mem.h"
+#include "mat.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -192,7 +193,7 @@ bool mstring_fill(mstring_t* self, size_t offset, size_t length, char c)
 		return false;
 	if (offset >= self->capacity)
 		return false;
-	length = min(length, self->capacity - offset);
+	length = mmin(length, self->capacity - offset);
 	memset(mstring_get(self, offset), c, length);
 	return true;
 }
@@ -300,7 +301,7 @@ bool mstring_replace(mstring_t* self, size_t index, size_t length, mstringview_t
 
 	if (index >= self->length)
 		index = self->length;
-	length              = min(length, self->length - index);
+	length              = mmin(length, self->length - index);
 	size_t requiredSize = self->length - length + replacement.length;
 	if (!mstring_reserve(self, requiredSize))
 		return false;
@@ -319,7 +320,7 @@ bool mstring_erase(mstring_t* self, size_t index, size_t length)
 		return false;
 	if (index >= self->length)
 		index = self->length;
-	length = min(length, self->length - index);
+	length = mmin(length, self->length - index);
 	if (length == 0)
 		return true;
 	size_t end   = index + length;
@@ -436,7 +437,7 @@ mstringview_t mstringview_substr(mstringview_t self, size_t index, size_t length
 		return mstringviewcstr(NULL);
 	if (index >= self.length)
 		index = self.length;
-	length            = min(length, self.length - index);
+	length            = mmin(length, self.length - index);
 	mstringview_t out = {
 		.string = self.string + index,
 		.length = length
@@ -448,7 +449,7 @@ int mstringview_compare(mstringview_t lhs, mstringview_t rhs)
 {
 	if (lhs.string < rhs.string)
 		return -1;
-	if (rhs.string > rhs.string)
+	if (lhs.string > rhs.string)
 		return 1;
 	if (lhs.length < rhs.length)
 		return -1;
@@ -565,7 +566,7 @@ size_t mstringview_find_last_of(mstringview_t self, mstringview_t chars, size_t 
 		if (found)
 			break;
 	}
-	return min(i, self.length);
+	return mmin(i, self.length);
 }
 
 size_t mstringview_find_last_not_of(mstringview_t self, mstringview_t chars, size_t offset)
@@ -583,7 +584,7 @@ size_t mstringview_find_last_not_of(mstringview_t self, mstringview_t chars, siz
 		if (found)
 			break;
 	}
-	return min(i, self.length);
+	return mmin(i, self.length);
 }
 
 mstring_t mstring_format(mstringview_t format, ...)
@@ -622,7 +623,7 @@ mstring_t mstring_format_va(mstringview_t format, va_list args)
 		{
 		case 'c':
 			++offset;
-			mstring_pushback(&result, va_arg(args, char));
+			mstring_pushback(&result, (char) va_arg(args, int));
 			break;
 		case 's':
 			++offset;
@@ -786,14 +787,14 @@ uint64_t mstring_to_uint(mstringview_t string, size_t radix, size_t* length)
 	else
 		indices = s_Base64Indices;
 	size_t end = 0;
-	while (end < string.length && indices[string.string[end]] != 0xFF)
+	while (end < string.length && indices[(int) string.string[end]] != 0xFF)
 		++end;
 
 	size_t   multiplier = 1;
 	uint64_t value      = 0;
 	for (size_t i = 0; i < end; ++i)
 	{
-		value      += indices[string.string[end - i - 1]] * multiplier;
+		value      += indices[(int) string.string[end - i - 1]] * multiplier;
 		multiplier *= radix;
 	}
 	if (length)

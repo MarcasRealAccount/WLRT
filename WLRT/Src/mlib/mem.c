@@ -6,6 +6,11 @@
 
 #if BUILD_IS_TOOLSET_MSVC
 	#include <intrin.h>
+#elif BUILD_IS_SYSTEM_MACOSX
+	#include <malloc/malloc.h>
+	#include <stdlib.h>
+#else
+	#include <stdlib.h>
 #endif
 
 static void* mdefault_alloc(size_t size, size_t alignment)
@@ -43,6 +48,9 @@ static size_t mdefault_size(void* ptr, size_t alignment)
 #if BUILD_IS_SYSTEM_WINDOWS
 	(void) alignment;
 	return _aligned_msize(ptr, alignment, 0);
+#elif BUILD_IS_SYSTEM_MACOSX
+	(void) alignment;
+	return malloc_size(ptr);
 #else
 	(void) alignment;
 	return malloc_usable_size(ptr);

@@ -1,5 +1,6 @@
 #include "dynarray.h"
 #include "mem.h"
+#include "mat.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -227,7 +228,7 @@ bool mdynarray_erase(mdynarray_t* self, size_t index, size_t length)
 		return false;
 	if (index >= self->size)
 		index = self->size;
-	length = min(length, self->size - index);
+	length = mmin(length, self->size - index);
 	if (length == 0)
 		return true;
 
@@ -550,7 +551,7 @@ mmultidynarrayrow_t mmultidynarray_get_row(mmultidynarray_t* self, size_t row)
 {
 	mmultidynarrayrow_t out = {
 		.arr = self,
-		.row = self ? min(row, self->size) : 0
+		.row = self ? mmin(row, self->size) : 0
 	};
 	return out;
 }
@@ -675,7 +676,7 @@ bool mmultidynarray_erase(mmultidynarray_t* self, size_t row, size_t length)
 		return false;
 	if (row >= self->size)
 		row = self->size;
-	length = min(length, self->size - row);
+	length = mmin(length, self->size - row);
 
 	size_t end    = row + length;
 	size_t toMove = self->size - end;

@@ -59,7 +59,10 @@ static uint64_t mfilewatcher_func(void* pData)
 	mpath_t tempPath1 = mpath(0);
 	mpath_t tempPath2 = mpath(0);
 
+#if BUILD_IS_SYSTEM_WINDOW
 	char buffer[MAX_PATH * sizeof(wchar_t)];
+#else
+#endif
 
 	while (matomicbool_load(&s_FileWatcher.alive))
 	{
@@ -271,6 +274,7 @@ uint64_t mfilewatcher_watch(const mpath_t* file, mfilewatcher_func_t func, void*
 		directory.handle            = CreateFileW(wbuffer, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, NULL);
 #else
 #endif
+		mdynarray_pushback(&s_FileWatcher.newDirs, &directory);
 	}
 	uint64_t id = watch->id;
 	mmutex_unlock(&s_FileWatcher.mtx);
